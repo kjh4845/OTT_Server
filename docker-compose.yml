@@ -1,0 +1,20 @@
+version: "3.8"
+services:
+  ott:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: ott-c-server:latest
+    container_name: ott-c
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      MEDIA_DIR: "/app/media"
+      THUMB_DIR: "/app/web/thumbnails"
+      SESSION_TTL_HOURS: "24"
+    volumes:
+      - ./media:/app/media:ro
+      - ./web/thumbnails:/app/web/thumbnails
+      - ./data:/app/data
+    restart: unless-stopped

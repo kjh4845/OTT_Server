@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OTT Server · Sign In</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <main>
+      <section class="login-card">
+        <header>
+          <div>
+            <h1>Welcome back</h1>
+            <p>Sign in to browse and stream your media library.</p>
+          </div>
+        </header>
+        <form id="login-form" novalidate>
+          <div class="input-group">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" autocomplete="username" required />
+          </div>
+          <div class="input-group">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button type="submit">Sign In</button>
+          <div id="login-error" class="alert error" style="display:none"></div>
+        </form>
+        <small>Default credentials: <strong>test / test1234</strong></small>
+      </section>
+    </main>
+    <script src="/js/api.js" defer></script>
+    <script src="/js/login.js" defer></script>
+  </body>
+</html>

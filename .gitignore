@@ -1,0 +1,7 @@
+server/build/
+server/ott_server
+server/.env
+web/thumbnails/
+data/
+media/
+.DS_Store

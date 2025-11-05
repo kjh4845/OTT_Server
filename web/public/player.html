@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OTT Player</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <a href="/videos.html" class="btn">← Back to library</a>
+      </div>
+      <span id="video-meta"></span>
+    </header>
+    <main>
+      <div id="resume-banner" class="resume-banner" style="display:none">
+        <div>
+          <strong>Resume watching?</strong>
+          <p id="resume-text" class="resume-label"></p>
+        </div>
+        <div style="display:flex; gap:0.75rem;">
+          <button id="resume-start">From start</button>
+          <button id="resume-continue" class="btn">Resume</button>
+        </div>
+      </div>
+      <div class="video-wrapper">
+        <video id="player" controls preload="auto" crossorigin="use-credentials"></video>
+      </div>
+      <div class="controls-bar">
+        <span id="status-text" class="resume-label"></span>
+        <button id="logout-btn" class="danger">Sign Out</button>
+      </div>
+    </main>
+    <script src="/js/api.js" defer></script>
+    <script src="/js/player.js" defer></script>
+  </body>
+</html>

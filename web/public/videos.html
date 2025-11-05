@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OTT Library</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>My Library</h1>
+        <p id="welcome-text"></p>
+      </div>
+      <button id="logout-btn" class="danger">Sign Out</button>
+    </header>
+    <main>
+      <div id="status" class="alert" style="display:none"></div>
+      <section id="videos-grid" class="grid"></section>
+    </main>
+    <script src="/js/api.js" defer></script>
+    <script src="/js/videos.js" defer></script>
+  </body>
+</html>
