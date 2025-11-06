@@ -10,7 +10,7 @@ High-performance OTT-style media server implemented in C11 using POSIX sockets, 
 - **Media catalogue** – automatic discovery of `.mp4` files, metadata stored in SQLite, and JSON APIs for listing and streaming.
 - **Watch history** – progress tracking with resumable playback, persisted per-user in SQLite.
 - **FFmpeg thumbnails** – on-demand capture of poster frames cached to disk.
-- **Front-end** – simple UI for login, library browsing, and playback with resume prompts.
+- **Front-end** – simple UI for login, library browsing, and playback with resume prompts; video cards are fully clickable for faster navigation.
 - **Container support** – multi-stage Dockerfile and `docker-compose.yml` for turnkey deployment.
 
 ## Project layout
@@ -37,7 +37,12 @@ The server reads environment variables (defaults shown):
 | `SESSION_TTL_HOURS` | Session lifetime in hours | `24` |
 | `DB_PATH` | Optional override for SQLite file | `data/app.db` |
 
-The SQLite schema is defined in `server/schema.sql`. On first launch a default account (`test / test1234`) is created for smoke testing.
+The SQLite schema is defined in `server/schema.sql`. On first launch the server seeds default accounts for smoke testing:
+
+- `test / test1234`
+- `demo / demo1234`
+- `guest / guestpass`
+- `sample / sample1234`
 
 ## Building & running locally
 

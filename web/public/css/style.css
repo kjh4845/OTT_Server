@@ -119,6 +119,15 @@ button.danger {
   flex-direction: column;
 }
 
+.video-card--link {
+  cursor: pointer;
+}
+
+.video-card--link:focus-visible {
+  outline: 3px solid var(--accent-color);
+  outline-offset: 4px;
+}
+
 .video-card img {
   width: 100%;
   aspect-ratio: 16 / 9;

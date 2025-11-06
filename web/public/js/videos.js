@@ -36,7 +36,24 @@
     grid.innerHTML = '';
     videos.forEach((video) => {
       const card = document.createElement('article');
-      card.className = 'video-card';
+      card.className = 'video-card video-card--link';
+      card.tabIndex = 0;
+      card.setAttribute('role', 'link');
+      const navigateToPlayer = () => {
+        window.location.href = `/player.html?v=${video.id}`;
+      };
+      card.addEventListener('click', (event) => {
+        if (event.target.closest('.btn')) {
+          return;
+        }
+        navigateToPlayer();
+      });
+      card.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          navigateToPlayer();
+        }
+      });
       const thumb = document.createElement('img');
       thumb.src = video.thumbnailUrl;
       thumb.alt = `${video.title} thumbnail`;

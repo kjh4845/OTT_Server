@@ -120,17 +120,31 @@ int auth_generate_session_token(char *buffer, size_t len) {
     return 0;
 }
 
-static void ensure_default_user(server_ctx_t *server) {
-    unsigned char hash[AUTH_HASH_LEN];
-    unsigned char salt[AUTH_SALT_LEN];
-    int user_id = 0;
-    if (db_get_user_credentials(&server->db, "test", &user_id, hash, sizeof(hash), salt, sizeof(salt)) == 0) {
+static void ensure_default_users(server_ctx_t *server) {
+    if (!server) {
         return;
     }
-    const char *password = "test1234";
-    if (auth_hash_password(password, salt, sizeof(salt), hash, sizeof(hash)) == 0) {
-        if (db_upsert_user(&server->db, "test", hash, sizeof(hash), salt, sizeof(salt)) == 0) {
-            log_info("Created default user 'test'");
+    static const struct {
+        const char *username;
+        const char *password;
+    } default_users[] = {
+        {"test", "test1234"},
+        {"demo", "demo1234"},
+        {"guest", "guestpass"},
+        {"sample", "sample1234"},
+    };
+    unsigned char hash[AUTH_HASH_LEN];
+    unsigned char salt[AUTH_SALT_LEN];
+    for (size_t i = 0; i < sizeof(default_users) / sizeof(default_users[0]); i++) {
+        int user_id = 0;
+        if (db_get_user_credentials(&server->db, default_users[i].username, &user_id, hash, sizeof(hash),
+                                    salt, sizeof(salt)) == 0) {
+            continue;
+        }
+        if (auth_hash_password(default_users[i].password, salt, sizeof(salt), hash, sizeof(hash)) == 0) {
+            if (db_upsert_user(&server->db, default_users[i].username, hash, sizeof(hash), salt, sizeof(salt)) == 0) {
+                log_info("Created default user '%s'", default_users[i].username);
+            }
         }
     }
 }
@@ -139,7 +153,7 @@ int auth_initialize(server_ctx_t *server) {
     if (!server) {
         return -1;
     }
-    ensure_default_user(server);
+    ensure_default_users(server);
     db_purge_expired_sessions(&server->db, time(NULL));
     return 0;
 }
