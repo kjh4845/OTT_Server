@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS := -std=c11 -O2 -Wall -Wextra -Wpedantic -pthread
+CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Wpedantic -pthread
 LDFLAGS := -lsqlite3 -lcrypto -lpthread
 
 SRC_DIR := src

@@ -8,6 +8,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "db.h"
 #include "ffmpeg.h"
@@ -34,12 +35,50 @@ typedef struct {
     size_t capacity;
 } resume_map_t;
 
+typedef struct {
+    char **items;
+    size_t count;
+    size_t capacity;
+} filename_list_t;
+
 static void resume_map_free(resume_map_t *map) {
     if (!map) return;
     free(map->items);
     map->items = NULL;
     map->count = 0;
     map->capacity = 0;
+}
+
+static void filename_list_free(filename_list_t *list) {
+    if (!list) return;
+    for (size_t i = 0; i < list->count; ++i) {
+        free(list->items[i]);
+    }
+    free(list->items);
+    list->items = NULL;
+    list->count = 0;
+    list->capacity = 0;
+}
+
+static int filename_list_add(filename_list_t *list, const char *name) {
+    if (!list || !name) return -1;
+    if (list->count == list->capacity) {
+        size_t new_cap = list->capacity == 0 ? 8 : list->capacity * 2;
+        char **new_items = realloc(list->items, new_cap * sizeof(char *));
+        if (!new_items) {
+            return -1;
+        }
+        list->items = new_items;
+        list->capacity = new_cap;
+    }
+    size_t len = strlen(name);
+    char *copy = malloc(len + 1);
+    if (!copy) {
+        return -1;
+    }
+    memcpy(copy, name, len + 1);
+    list->items[list->count++] = copy;
+    return 0;
 }
 
 static int resume_map_add(resume_map_t *map, int video_id, double position) {
@@ -114,6 +153,8 @@ static int sync_media_directory(server_ctx_t *server) {
         log_warn("Failed to open media directory %s: %s", server->media_dir, strerror(errno));
         return -1;
     }
+    filename_list_t files = {0};
+    int result = 0;
     struct dirent *ent;
     while ((ent = readdir(dir)) != NULL) {
         if (ent->d_name[0] == '.') continue;
@@ -122,9 +163,25 @@ static int sync_media_directory(server_ctx_t *server) {
         make_title(ent->d_name, title, sizeof(title));
         if (db_upsert_video(&server->db, title, ent->d_name, NULL, 0, NULL) != 0) {
             log_warn("Failed to upsert video %s", ent->d_name);
+            result = -1;
+            break;
+        }
+        if (filename_list_add(&files, ent->d_name) != 0) {
+            log_warn("Failed to track media filename %s", ent->d_name);
+            result = -1;
+            break;
         }
     }
     closedir(dir);
+    if (result != 0) {
+        log_error("Media synchronization aborted; see warnings above for details");
+        filename_list_free(&files);
+        return -1;
+    }
+    if (db_prune_missing_videos(&server->db, (const char *const *)files.items, files.count) != 0) {
+        log_warn("Failed to prune missing videos; stale entries may remain");
+    }
+    filename_list_free(&files);
     return 0;
 }
 

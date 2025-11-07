@@ -329,6 +329,80 @@ int db_upsert_video(db_ctx_t *db, const char *title, const char *filename,
     return (rc == SQLITE_ROW || rc == SQLITE_DONE) ? 0 : -1;
 }
 
+int db_delete_video_by_filename(db_ctx_t *db, const char *filename) {
+    if (!db || !filename) {
+        return -1;
+    }
+    const char *sql = "DELETE FROM videos WHERE filename = ?";
+    db_lock(db);
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        db_unlock(db);
+        return -1;
+    }
+    sqlite3_bind_text(stmt, 1, filename, -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    db_unlock(db);
+    return rc == SQLITE_DONE ? 0 : -1;
+}
+
+int db_prune_missing_videos(db_ctx_t *db, const char *const *filenames, size_t count) {
+    if (!db) return -1;
+    db_lock(db);
+    int rc = -1;
+    char *errmsg = NULL;
+    sqlite3_stmt *insert_stmt = NULL;
+    const char *create_sql = "CREATE TEMP TABLE IF NOT EXISTS temp_existing(filename TEXT PRIMARY KEY)";
+    if (sqlite3_exec(db->conn, create_sql, NULL, NULL, &errmsg) != SQLITE_OK) {
+        goto done;
+    }
+    if (errmsg) {
+        sqlite3_free(errmsg);
+        errmsg = NULL;
+    }
+    if (sqlite3_exec(db->conn, "DELETE FROM temp_existing", NULL, NULL, &errmsg) != SQLITE_OK) {
+        goto done;
+    }
+    if (errmsg) {
+        sqlite3_free(errmsg);
+        errmsg = NULL;
+    }
+    if (sqlite3_prepare_v2(db->conn,
+                           "INSERT OR IGNORE INTO temp_existing(filename) VALUES(?)",
+                           -1, &insert_stmt, NULL) != SQLITE_OK) {
+        goto done;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        const char *name = filenames ? filenames[i] : NULL;
+        if (!name || !*name) continue;
+        sqlite3_bind_text(insert_stmt, 1, name, -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(insert_stmt) != SQLITE_DONE) {
+            goto done;
+        }
+        sqlite3_reset(insert_stmt);
+        sqlite3_clear_bindings(insert_stmt);
+    }
+    sqlite3_finalize(insert_stmt);
+    insert_stmt = NULL;
+    const char *delete_sql =
+        "DELETE FROM videos WHERE filename NOT IN (SELECT filename FROM temp_existing)";
+    if (sqlite3_exec(db->conn, delete_sql, NULL, NULL, &errmsg) != SQLITE_OK) {
+        goto done;
+    }
+    rc = 0;
+done:
+    if (insert_stmt) {
+        sqlite3_finalize(insert_stmt);
+    }
+    sqlite3_exec(db->conn, "DELETE FROM temp_existing", NULL, NULL, NULL);
+    if (errmsg) {
+        sqlite3_free(errmsg);
+    }
+    db_unlock(db);
+    return rc;
+}
+
 int db_update_watch_history(db_ctx_t *db, int user_id, int video_id, double position_seconds) {
     if (!db) return -1;
     const char *sql =

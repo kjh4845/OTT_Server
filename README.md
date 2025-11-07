@@ -111,3 +111,10 @@ All API responses are JSON; errors return payloads of the form `{"error":"messag
 - Reset cached thumbnails: `rm -rf web/thumbnails/*`.
 - Inspect the SQLite database: `sqlite3 data/app.db`.
 - To add new users manually, reuse the PBKDF2 routine (`auth_hash_password`) to generate salt/hash pairs before inserting into the `users` table.
+
+## 2025-11-07 Updates
+
+- **Media sync cleanup** – `sync_media_directory` now collects the actual filenames under `media/` and calls the new `db_prune_missing_videos` helper so any deleted MP4s are dropped from the `videos` table automatically, preventing stale entries without manual SQL.
+- **Database helper** – `db_prune_missing_videos` (in `server/src/db.c`) loads the live filename set into a temporary table and deletes rows not in that set, keeping watch-history FKs intact while avoiding recursive DB locks.
+- **Tooling tweaks** – debug symbols are enabled in `server/Makefile` for easier gdb/valgrind work inside Docker, and the temporary “더비 기념영상 01~10” media samples were removed from source control.
+- **Verification** – rebuild via `docker compose build` and sanity-check with `docker compose run --rm --entrypoint sh ott -c "/app/ott_server"`; stop any ad-hoc containers afterwards (e.g., `docker stop $(docker ps -q --filter name=ott-c-ott-run)`).

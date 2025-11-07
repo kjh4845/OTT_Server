@@ -40,6 +40,8 @@ int db_get_video_by_id(db_ctx_t *db, int video_id,
                        int *duration_seconds_out);
 int db_upsert_video(db_ctx_t *db, const char *title, const char *filename,
                     const char *description, int duration_seconds, int *video_id_out);
+int db_delete_video_by_filename(db_ctx_t *db, const char *filename);
+int db_prune_missing_videos(db_ctx_t *db, const char *const *filenames, size_t count);
 
 int db_update_watch_history(db_ctx_t *db, int user_id, int video_id, double position_seconds);
 int db_get_watch_history(db_ctx_t *db, int user_id, int video_id, double *position_seconds_out);
