@@ -3,5 +3,6 @@ server/ott_server
 server/.env
 web/thumbnails/
 data/
-media/
+media/*
+!media/*.mp4
 .DS_Store
