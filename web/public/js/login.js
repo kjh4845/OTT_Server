@@ -11,6 +11,9 @@
 
   const form = document.getElementById('login-form');
   const errorBox = document.getElementById('login-error');
+  const registerForm = document.getElementById('register-form');
+  const registerError = document.getElementById('register-error');
+  const registerSuccess = document.getElementById('register-success');
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -33,5 +36,49 @@
   function showError(message) {
     errorBox.textContent = message;
     errorBox.style.display = 'block';
+  }
+
+  if (registerForm) {
+    registerForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideRegisterMessages();
+      const formData = new FormData(registerForm);
+      const username = (formData.get('newUsername') || '').trim();
+      const password = formData.get('newPassword');
+      const confirmPassword = formData.get('confirmPassword');
+      if (!username || !password || !confirmPassword) {
+        showRegisterError('Please fill out every field.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        showRegisterError('Passwords must match.');
+        return;
+      }
+      try {
+        await api.post('/api/auth/register', { username, password, confirmPassword });
+        if (registerSuccess) {
+          registerSuccess.textContent = 'Account created! Redirecting...';
+          registerSuccess.style.display = 'block';
+        }
+        api.redirectToLibrary({ replace: true });
+      } catch (err) {
+        showRegisterError(err.message || 'Unable to create account.');
+      }
+    });
+  }
+
+  function hideRegisterMessages() {
+    if (registerError) {
+      registerError.style.display = 'none';
+    }
+    if (registerSuccess) {
+      registerSuccess.style.display = 'none';
+    }
+  }
+
+  function showRegisterError(message) {
+    if (!registerError) return;
+    registerError.textContent = message;
+    registerError.style.display = 'block';
   }
 })();

@@ -16,6 +16,41 @@
 #define AUTH_SALT_LEN 16
 #define AUTH_HASH_LEN 32
 #define AUTH_ITERATIONS 200000
+#define USERNAME_MAX_LEN 32
+
+static void trim_whitespace(char *s) {
+    if (!s) return;
+    size_t len = strlen(s);
+    size_t start = 0;
+    while (start < len && isspace((unsigned char)s[start])) {
+        start++;
+    }
+    size_t end = len;
+    while (end > start && isspace((unsigned char)s[end - 1])) {
+        end--;
+    }
+    if (start > 0) {
+        memmove(s, s + start, end - start);
+    }
+    s[end - start] = '\0';
+}
+
+static int is_valid_username(const char *username) {
+    if (!username) {
+        return 0;
+    }
+    size_t len = strlen(username);
+    if (len < 3 || len > USERNAME_MAX_LEN) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; ++i) {
+        char c = username[i];
+        if (!(isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.')) {
+            return 0;
+        }
+    }
+    return 1;
+}
 
 static int parse_cookie(const char *header, const char *name, char *out, size_t len) {
     if (!header || !name || !out || len == 0) {
@@ -272,4 +307,79 @@ void auth_handle_me(request_ctx_t *ctx) {
     char body[256];
     snprintf(body, sizeof(body), "{\"username\":\"%s\",\"userId\":%d}", ctx->username, ctx->user_id);
     router_send_json(ctx, 200, body, NULL);
+}
+
+void auth_handle_register(request_ctx_t *ctx) {
+    if (!ctx || !ctx->request->body) {
+        router_send_json_error(ctx, 400, "Invalid payload");
+        return;
+    }
+    char username[USERNAME_MAX_LEN + 1];
+    char password[128];
+    char confirm[128];
+    if (json_get_string(ctx->request->body, "username", username, sizeof(username)) != 0 ||
+        json_get_string(ctx->request->body, "password", password, sizeof(password)) != 0 ||
+        json_get_string(ctx->request->body, "confirmPassword", confirm, sizeof(confirm)) != 0) {
+        router_send_json_error(ctx, 400, "Missing fields");
+        goto cleanup;
+    }
+    trim_whitespace(username);
+    if (!is_valid_username(username)) {
+        router_send_json_error(ctx, 400, "Username must be 3-32 characters (letters, numbers, ., -, _)");
+        goto cleanup;
+    }
+    if (strlen(password) < 8) {
+        router_send_json_error(ctx, 400, "Password must be at least 8 characters");
+        goto cleanup;
+    }
+    if (strcmp(password, confirm) != 0) {
+        router_send_json_error(ctx, 400, "Passwords do not match");
+        goto cleanup;
+    }
+    unsigned char hash[AUTH_HASH_LEN];
+    unsigned char salt[AUTH_SALT_LEN];
+    if (auth_hash_password(password, salt, sizeof(salt), hash, sizeof(hash)) != 0) {
+        router_send_json_error(ctx, 500, "Failed to secure password");
+        goto cleanup;
+    }
+    int new_user_id = 0;
+    int rc = db_create_user(&ctx->server->db, username, hash, sizeof(hash), salt, sizeof(salt), &new_user_id);
+    if (rc == SQLITE_CONSTRAINT) {
+        router_send_json_error(ctx, 409, "Username already exists");
+        goto cleanup;
+    } else if (rc != 0) {
+        router_send_json_error(ctx, 500, "Unable to create account");
+        goto cleanup;
+    }
+
+    char token[128];
+    if (auth_generate_session_token(token, sizeof(token)) != 0) {
+        router_send_json_error(ctx, 500, "Failed to create session");
+        goto cleanup;
+    }
+    time_t now = time(NULL);
+    db_purge_expired_sessions(&ctx->server->db, now);
+    int max_age = ctx->server->session_ttl_hours * 3600;
+    time_t expires_at = now + max_age;
+    if (db_create_session(&ctx->server->db, token, new_user_id, expires_at) != 0) {
+        router_send_json_error(ctx, 500, "Unable to persist session");
+        goto cleanup;
+    }
+    ctx->authenticated = 1;
+    ctx->user_id = new_user_id;
+    snprintf(ctx->username, sizeof(ctx->username), "%s", username);
+    snprintf(ctx->session_token, sizeof(ctx->session_token), "%s", token);
+
+    char response[256];
+    snprintf(response, sizeof(response), "{\"username\":\"%s\",\"userId\":%d}", username, new_user_id);
+    char cookie[512];
+    snprintf(cookie, sizeof(cookie),
+             "Set-Cookie: %s=%s; HttpOnly; SameSite=Lax; Path=/; Max-Age=%d\r\n",
+             SESSION_COOKIE_NAME, token, max_age);
+    router_send_json(ctx, 201, response, cookie);
+
+cleanup:
+    memset(password, 0, sizeof(password));
+    memset(confirm, 0, sizeof(confirm));
+    return;
 }

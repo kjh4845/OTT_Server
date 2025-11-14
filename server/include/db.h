@@ -22,6 +22,10 @@ int db_get_user_credentials(db_ctx_t *db, const char *username, int *user_id,
 int db_upsert_user(db_ctx_t *db, const char *username,
                    const unsigned char *hash, size_t hash_len,
                    const unsigned char *salt, size_t salt_len);
+int db_create_user(db_ctx_t *db, const char *username,
+                   const unsigned char *hash, size_t hash_len,
+                   const unsigned char *salt, size_t salt_len,
+                   int *user_id_out);
 
 int db_create_session(db_ctx_t *db, const char *token, int user_id, time_t expires_at);
 int db_get_session(db_ctx_t *db, const char *token, int *user_id, time_t *expires_at);
@@ -33,6 +37,11 @@ int db_list_videos(db_ctx_t *db,
                                    const char *filename, const char *description,
                                    int duration_seconds),
                    void *userdata);
+int db_query_videos(db_ctx_t *db, const char *search_term, int limit, int offset,
+                    int (*callback)(void *userdata, int id, const char *title,
+                                    const char *filename, const char *description,
+                                    int duration_seconds),
+                    void *userdata, int *has_more_out);
 int db_get_video_by_id(db_ctx_t *db, int video_id,
                        char *title_out, size_t title_len,
                        char *filename_out, size_t filename_len,

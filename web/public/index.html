@@ -27,7 +27,44 @@
           <button type="submit">Sign In</button>
           <div id="login-error" class="alert error" style="display:none"></div>
         </form>
-        <small>Default credentials: <strong>test / test1234</strong></small>
+        <div class="form-divider"><span>Or create a new account</span></div>
+        <form id="register-form" novalidate>
+          <div class="input-group">
+            <label for="register-username">Username</label>
+            <input
+              id="register-username"
+              name="newUsername"
+              type="text"
+              autocomplete="username"
+              maxlength="32"
+              required
+            />
+          </div>
+          <div class="input-group">
+            <label for="register-password">Password</label>
+            <input
+              id="register-password"
+              name="newPassword"
+              type="password"
+              autocomplete="new-password"
+              required
+            />
+          </div>
+          <div class="input-group">
+            <label for="register-confirm">Confirm Password</label>
+            <input
+              id="register-confirm"
+              name="confirmPassword"
+              type="password"
+              autocomplete="new-password"
+              required
+            />
+          </div>
+          <button type="submit" class="secondary">Sign Up</button>
+        </form>
+        <div id="register-error" class="alert error" style="display:none"></div>
+        <div id="register-success" class="alert success" style="display:none"></div>
+        <small class="helper-text">Default credentials are still available: <strong>test / test1234</strong></small>
       </section>
     </main>
     <script src="/js/api.js" defer></script>

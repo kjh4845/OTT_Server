@@ -347,6 +347,7 @@ int main(void) {
 
     route_entry_t routes[] = {
         {HTTP_POST, "/api/auth/login", auth_handle_login},
+        {HTTP_POST, "/api/auth/register", auth_handle_register},
         {HTTP_POST, "/api/auth/logout", auth_handle_logout},
         {HTTP_GET, "/api/auth/me", auth_handle_me},
         {HTTP_GET, "/api/videos", video_handle_list},

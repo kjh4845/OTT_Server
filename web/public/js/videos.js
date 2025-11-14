@@ -8,12 +8,30 @@
     }
     return;
   }
+
   const welcome = document.getElementById('welcome-text');
-  welcome.textContent = `Signed in as ${user.username}`;
+  if (welcome) {
+    welcome.textContent = `Signed in as ${user.username}`;
+  }
 
   const status = document.getElementById('status');
   const grid = document.getElementById('videos-grid');
+  const loader = document.getElementById('feed-loader');
+  const endMessage = document.getElementById('feed-end');
+  const sentinel = document.getElementById('scroll-sentinel');
+  const searchForm = document.getElementById('search-form');
+  const searchInput = document.getElementById('video-search');
+  const clearBtn = document.getElementById('search-clear');
   const logoutBtn = document.getElementById('logout-btn');
+
+  const state = {
+    cursor: 0,
+    limit: 12,
+    isLoading: false,
+    hasMore: true,
+    query: '',
+  };
+
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       try {
@@ -24,16 +42,98 @@
     });
   }
 
-  try {
-    const data = await api.get('/api/videos');
-    const videos = Array.isArray(data.videos) ? data.videos : [];
-    if (!videos.length) {
-      status.textContent = 'No videos found. Add MP4 files to the media directory to get started.';
-      status.classList.add('alert');
-      status.style.display = 'block';
+  if (searchForm) {
+    searchForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      startSearch();
+    });
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (searchInput) {
+        searchInput.value = '';
+      }
+      if (state.query) {
+        startSearch();
+      } else {
+        updateClearButton();
+      }
+    });
+  }
+  if (searchInput) {
+    searchInput.addEventListener('input', updateClearButton);
+  }
+  updateClearButton();
+
+  if (sentinel && 'IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries[0].isIntersecting) {
+        return;
+      }
+      loadPage();
+    }, { rootMargin: '400px 0px' });
+    observer.observe(sentinel);
+  }
+
+  await loadPage({ reset: true });
+
+  async function loadPage({ reset = false } = {}) {
+    if (state.isLoading) {
       return;
     }
-    grid.innerHTML = '';
+    if (!state.hasMore && !reset) {
+      showEndMessage();
+      return;
+    }
+    state.isLoading = true;
+    hideStatus();
+    if (loader) {
+      loader.style.display = 'flex';
+    }
+    if (reset) {
+      state.cursor = 0;
+      state.hasMore = true;
+      if (grid) {
+        grid.innerHTML = '';
+      }
+      if (endMessage) {
+        endMessage.style.display = 'none';
+      }
+    }
+    try {
+      const params = new URLSearchParams({ limit: state.limit.toString(), cursor: state.cursor.toString() });
+      if (state.query) {
+        params.set('q', state.query);
+      }
+      const data = await api.get(`/api/videos?${params.toString()}`);
+      const videos = Array.isArray(data.videos) ? data.videos : [];
+      renderVideos(videos);
+      const nextCursor = typeof data.nextCursor === 'number' ? data.nextCursor : state.cursor + videos.length;
+      state.cursor = nextCursor;
+      state.hasMore = typeof data.hasMore === 'boolean' ? data.hasMore : videos.length >= state.limit;
+      if (!videos.length && state.cursor === 0) {
+        const message = state.query
+          ? `No videos matched "${state.query}".`
+          : 'No videos found. Add MP4 files to the media directory to get started.';
+        showStatus(message, false);
+      } else {
+        hideStatus();
+      }
+      showEndMessage();
+    } catch (err) {
+      showStatus(err.message || 'Failed to load videos.', true);
+    } finally {
+      state.isLoading = false;
+      if (loader) {
+        loader.style.display = 'none';
+      }
+    }
+  }
+
+  function renderVideos(videos) {
+    if (!grid || !Array.isArray(videos)) {
+      return;
+    }
     videos.forEach((video) => {
       const card = document.createElement('article');
       card.className = 'video-card video-card--link';
@@ -92,9 +192,40 @@
       card.appendChild(body);
       grid.appendChild(card);
     });
-  } catch (err) {
-    status.textContent = err.message || 'Failed to load videos.';
-    status.classList.add('error');
+  }
+
+  function showStatus(message, isError) {
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle('error', Boolean(isError));
     status.style.display = 'block';
+  }
+
+  function hideStatus() {
+    if (!status) return;
+    status.style.display = 'none';
+  }
+
+  function showEndMessage() {
+    if (!endMessage) return;
+    if (!state.hasMore && grid && grid.children.length > 0) {
+      endMessage.style.display = 'block';
+    } else {
+      endMessage.style.display = 'none';
+    }
+  }
+
+  function startSearch() {
+    if (!searchInput) {
+      return;
+    }
+    state.query = searchInput.value.trim();
+    updateClearButton();
+    loadPage({ reset: true });
+  }
+
+  function updateClearButton() {
+    if (!clearBtn || !searchInput) return;
+    clearBtn.style.visibility = searchInput.value.trim() ? 'visible' : 'hidden';
   }
 })();

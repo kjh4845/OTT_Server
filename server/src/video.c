@@ -1,5 +1,6 @@
 #include "video.h"
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
@@ -22,6 +23,101 @@ static void build_header(char *dest, size_t len, server_ctx_t *server, const cha
     } else {
         snprintf(dest, len, "%s", server->security_headers);
     }
+}
+
+#define VIDEO_DEFAULT_LIMIT 12
+#define VIDEO_MAX_LIMIT 50
+
+static int hex_value(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static int url_decode_component(const char *src, size_t len, char *dst, size_t dst_len) {
+    if (!src || !dst || dst_len == 0) {
+        return -1;
+    }
+    size_t di = 0;
+    for (size_t si = 0; si < len; ++si) {
+        char c = src[si];
+        if (c == '+') {
+            c = ' ';
+        } else if (c == '%' && si + 2 < len) {
+            int hi = hex_value(src[si + 1]);
+            int lo = hex_value(src[si + 2]);
+            if (hi >= 0 && lo >= 0) {
+                c = (char)((hi << 4) | lo);
+                si += 2;
+            }
+        }
+        if (di + 1 >= dst_len) {
+            return -1;
+        }
+        dst[di++] = c;
+    }
+    dst[di] = '\0';
+    return 0;
+}
+
+static int query_get_param(const char *query, const char *name, char *out, size_t out_len) {
+    if (!query || !*query || !name || !out || out_len == 0) {
+        return -1;
+    }
+    size_t name_len = strlen(name);
+    const char *cursor = query;
+    while (*cursor) {
+        const char *amp = strchr(cursor, '&');
+        size_t pair_len = amp ? (size_t)(amp - cursor) : strlen(cursor);
+        const char *eq = memchr(cursor, '=', pair_len);
+        size_t key_len = eq ? (size_t)(eq - cursor) : pair_len;
+        if (key_len == name_len && strncmp(cursor, name, name_len) == 0) {
+            const char *value_start = eq ? eq + 1 : cursor + key_len;
+            size_t value_len = eq ? pair_len - key_len - 1 : 0;
+            if (value_len == 0) {
+                out[0] = '\0';
+                return 0;
+            }
+            return url_decode_component(value_start, value_len, out, out_len);
+        }
+        if (!amp) {
+            break;
+        }
+        cursor = amp + 1;
+    }
+    return -1;
+}
+
+static int query_get_int(const char *query, const char *name, int *value_out) {
+    char buf[32];
+    if (query_get_param(query, name, buf, sizeof(buf)) != 0) {
+        return -1;
+    }
+    char *end = NULL;
+    long v = strtol(buf, &end, 10);
+    if (!end || *end != '\0') {
+        return -1;
+    }
+    *value_out = (int)v;
+    return 0;
+}
+
+static void trim_spaces(char *s) {
+    if (!s) return;
+    size_t len = strlen(s);
+    size_t start = 0;
+    while (start < len && isspace((unsigned char)s[start])) {
+        start++;
+    }
+    size_t end = len;
+    while (end > start && isspace((unsigned char)s[end - 1])) {
+        end--;
+    }
+    if (start > 0) {
+        memmove(s, s + start, end - start);
+    }
+    s[end - start] = '\0';
 }
 
 typedef struct {
@@ -195,6 +291,7 @@ typedef struct {
     string_builder_t *sb;
     int first;
     const resume_map_t *history;
+    size_t emitted;
 } list_ctx_t;
 
 static int append_video_row(void *userdata, int id, const char *title,
@@ -228,6 +325,7 @@ static int append_video_row(void *userdata, int id, const char *title,
     if (sb_append(data->sb, ",\"resumeSeconds\":%.3f", has_resume ? resume : 0.0) != 0) return -1;
     if (sb_append(data->sb, "}") != 0) return -1;
     data->first = 0;
+    data->emitted++;
     return 0;
 }
 
@@ -237,6 +335,27 @@ void video_handle_list(request_ctx_t *ctx) {
         return;
     }
     sync_media_directory(ctx->server);
+    int limit = VIDEO_DEFAULT_LIMIT;
+    int cursor = 0;
+    if (query_get_int(ctx->request->query, "limit", &limit) == 0) {
+        if (limit < 1) limit = VIDEO_DEFAULT_LIMIT;
+        if (limit > VIDEO_MAX_LIMIT) limit = VIDEO_MAX_LIMIT;
+    } else {
+        limit = VIDEO_DEFAULT_LIMIT;
+    }
+    if (query_get_int(ctx->request->query, "cursor", &cursor) == 0) {
+        if (cursor < 0) cursor = 0;
+    } else {
+        cursor = 0;
+    }
+    char search_term[128] = {0};
+    int has_query = 0;
+    if (query_get_param(ctx->request->query, "q", search_term, sizeof(search_term)) == 0) {
+        trim_spaces(search_term);
+        if (search_term[0] != '\0') {
+            has_query = 1;
+        }
+    }
     resume_map_t map = {0};
     if (db_list_watch_history(&ctx->server->db, ctx->user_id, collect_resume, &map) != 0) {
         resume_map_free(&map);
@@ -254,14 +373,39 @@ void video_handle_list(request_ctx_t *ctx) {
         router_send_json_error(ctx, 500, "Allocation failed");
         return;
     }
-    list_ctx_t data = {.ctx = ctx, .sb = &sb, .first = 1, .history = &map};
-    if (db_list_videos(&ctx->server->db, append_video_row, &data) != 0) {
+    list_ctx_t data = {.ctx = ctx, .sb = &sb, .first = 1, .history = &map, .emitted = 0};
+    int has_more = 0;
+    if (db_query_videos(&ctx->server->db, has_query ? search_term : NULL, limit, cursor,
+                        append_video_row, &data, &has_more) != 0) {
         sb_free(&sb);
         resume_map_free(&map);
         router_send_json_error(ctx, 500, "Failed to query videos");
         return;
     }
-    if (sb_append(&sb, "]}") != 0) {
+    int next_cursor = cursor + (int)data.emitted;
+    if (sb_append(&sb, "],\"cursor\":%d,\"limit\":%d,\"nextCursor\":%d,\"hasMore\":%s,\"query\":",
+                  cursor, limit, next_cursor, has_more ? "true" : "false") != 0) {
+        sb_free(&sb);
+        resume_map_free(&map);
+        router_send_json_error(ctx, 500, "Allocation failed");
+        return;
+    }
+    if (has_query) {
+        if (sb_append_json_string(&sb, search_term) != 0) {
+            sb_free(&sb);
+            resume_map_free(&map);
+            router_send_json_error(ctx, 500, "Allocation failed");
+            return;
+        }
+    } else {
+        if (sb_append(&sb, "null") != 0) {
+            sb_free(&sb);
+            resume_map_free(&map);
+            router_send_json_error(ctx, 500, "Allocation failed");
+            return;
+        }
+    }
+    if (sb_append(&sb, "}") != 0) {
         sb_free(&sb);
         resume_map_free(&map);
         router_send_json_error(ctx, 500, "Allocation failed");

@@ -7,6 +7,7 @@
 
 int auth_initialize(server_ctx_t *server);
 void auth_handle_login(request_ctx_t *ctx);
+void auth_handle_register(request_ctx_t *ctx);
 void auth_handle_logout(request_ctx_t *ctx);
 void auth_handle_me(request_ctx_t *ctx);
 int auth_authenticate_request(request_ctx_t *ctx);

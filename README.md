@@ -7,7 +7,9 @@ High-performance OTT-style media server implemented in C11 using POSIX sockets, 
 
 - **Custom HTTP stack** – epoll-based event loop with worker pool, manual HTTP parsing, static file serving, and Range (206) streaming via `sendfile` when available.
 - **Authentication & sessions** – salted PBKDF2-HMAC-SHA256 password hashing with OpenSSL, cookie-based sessions stored in SQLite with configurable TTL.
+- **Self-service onboarding** – built-in registration endpoint with duplicate checks and automatic session issuance.
 - **Media catalogue** – automatic discovery of `.mp4` files, metadata stored in SQLite, and JSON APIs for listing and streaming.
+- **Discovery UX** – keyword search with cursor-based pagination feeds the Pinterest-style infinite scroll UI.
 - **Watch history** – progress tracking with resumable playback, persisted per-user in SQLite.
 - **FFmpeg thumbnails** – on-demand capture of poster frames cached to disk.
 - **Front-end** – simple UI for login, library browsing, and playback with resume prompts; video cards are fully clickable for faster navigation.
@@ -87,6 +89,7 @@ Volumes mount the host `media/`, `web/thumbnails/`, and `data/` directories into
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | `POST` | `/api/auth/login` | Authenticate user (sets HttpOnly session cookie) |
+| `POST` | `/api/auth/register` | Create a new account and sign in |
 | `POST` | `/api/auth/logout` | Destroy current session |
 | `GET` | `/api/auth/me` | Return authenticated user info |
 | `GET` | `/api/videos` | List available videos, thumbnails, and resume markers |
@@ -94,6 +97,8 @@ Volumes mount the host `media/`, `web/thumbnails/`, and `data/` directories into
 | `GET` | `/api/videos/:id/stream` | Stream MP4 content with Range support |
 | `GET` | `/api/history` | Retrieve watch history for current user |
 | `POST` | `/api/history/:id` | Update progress (seconds) for a video |
+
+`GET /api/videos` accepts optional `cursor`, `limit` (max 50), and `q` parameters to support keyword search plus infinite scrolling. Responses include `nextCursor` and `hasMore` flags so the front-end can request the next batch automatically.
 
 All API responses are JSON; errors return payloads of the form `{"error":"message"}`. Streaming endpoints return binary data with appropriate headers.
 
@@ -118,3 +123,11 @@ All API responses are JSON; errors return payloads of the form `{"error":"messag
 - **Database helper** – `db_prune_missing_videos` (in `server/src/db.c`) loads the live filename set into a temporary table and deletes rows not in that set, keeping watch-history FKs intact while avoiding recursive DB locks.
 - **Tooling tweaks** – debug symbols are enabled in `server/Makefile` for easier gdb/valgrind work inside Docker
 - **Verification** – rebuild via `docker compose build` and sanity-check with `docker compose run --rm --entrypoint sh ott -c "/app/ott_server"`; stop any ad-hoc containers afterwards (e.g., `docker stop $(docker ps -q --filter name=ott-c-ott-run)`).
+
+## 2025-11-14 Updates
+
+- **User registration API** – new `POST /api/auth/register` endpoint validates username/password rules, hashes credentials with PBKDF2, guarantees uniqueness via `db_create_user`, and logs the user in immediately with a freshly minted session cookie.
+- **Video search & pagination** – `/api/videos` now accepts `q`, `cursor`, and `limit` query params; server-side pagination is powered by `db_query_videos`, which returns `nextCursor`/`hasMore` metadata for smooth infinite scrolling.
+- **Front-end onboarding** – the sign-in page ships with an inline registration form, real-time validations, and success/error messaging so first-time users can provision accounts without leaving the page.
+- **Discovery UX overhaul** – the library page adds a search bar with clear controls plus a Pinterest-style infinite scroll fed by an `IntersectionObserver`, complete with loading pills and "마지막 콘텐츠입니다." terminal messaging.
+- **Styling polish** – shared CSS introduces helper classes for the new UI components (divider, search bar, loading pill, ghost buttons) to keep login and library surfaces visually aligned.

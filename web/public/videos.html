@@ -15,8 +15,29 @@
       <button id="logout-btn" class="danger">Sign Out</button>
     </header>
     <main>
+      <section class="library-toolbar">
+        <form id="search-form" class="search-bar" role="search">
+          <label class="sr-only" for="video-search">Search videos</label>
+          <input
+            id="video-search"
+            name="q"
+            type="search"
+            placeholder="Search by title or description"
+            autocomplete="off"
+          />
+          <div class="search-actions">
+            <button type="submit">Search</button>
+            <button type="button" id="search-clear" class="ghost" aria-label="Clear search">
+              Clear
+            </button>
+          </div>
+        </form>
+      </section>
       <div id="status" class="alert" style="display:none"></div>
       <section id="videos-grid" class="grid"></section>
+      <div id="feed-loader" class="loading-pill" style="display:none">Loading...</div>
+      <div id="feed-end" class="feed-end" style="display:none">마지막 콘텐츠입니다.</div>
+      <div id="scroll-sentinel" aria-hidden="true"></div>
     </main>
     <script src="/js/api.js" defer></script>
     <script src="/js/videos.js" defer></script>

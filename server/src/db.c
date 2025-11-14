@@ -144,6 +144,39 @@ int db_upsert_user(db_ctx_t *db, const char *username,
     return rc == SQLITE_DONE ? 0 : -1;
 }
 
+int db_create_user(db_ctx_t *db, const char *username,
+                   const unsigned char *hash, size_t hash_len,
+                   const unsigned char *salt, size_t salt_len,
+                   int *user_id_out) {
+    if (!db || !username || !hash || !salt) {
+        return -1;
+    }
+    const char *sql = "INSERT INTO users(username, password_hash, salt) VALUES(?, ?, ?)";
+    db_lock(db);
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        db_unlock(db);
+        return -1;
+    }
+    sqlite3_bind_text(stmt, 1, username, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_blob(stmt, 2, hash, (int)hash_len, SQLITE_TRANSIENT);
+    sqlite3_bind_blob(stmt, 3, salt, (int)salt_len, SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_DONE && user_id_out) {
+        *user_id_out = (int)sqlite3_last_insert_rowid(db->conn);
+    }
+    sqlite3_finalize(stmt);
+    db_unlock(db);
+    if (rc == SQLITE_DONE) {
+        return 0;
+    }
+    if (rc == SQLITE_CONSTRAINT) {
+        return SQLITE_CONSTRAINT;
+    }
+    return -1;
+}
+
 int db_create_session(db_ctx_t *db, const char *token, int user_id, time_t expires_at) {
     if (!db || !token) return -1;
     const char *sql =
@@ -253,6 +286,82 @@ int db_list_videos(db_ctx_t *db,
     sqlite3_finalize(stmt);
     db_unlock(db);
     return (rc == SQLITE_DONE || rc == SQLITE_ROW) ? result : -1;
+}
+
+int db_query_videos(db_ctx_t *db, const char *search_term, int limit, int offset,
+                    int (*callback)(void *userdata, int id, const char *title,
+                                    const char *filename, const char *description,
+                                    int duration_seconds),
+                    void *userdata, int *has_more_out) {
+    if (!db || !callback || limit <= 0 || offset < 0) {
+        return -1;
+    }
+    const char *base_sql =
+        "SELECT id, title, filename, IFNULL(description, ''), duration_seconds FROM videos ORDER BY id LIMIT ? OFFSET ?";
+    const char *search_sql =
+        "SELECT id, title, filename, IFNULL(description, ''), duration_seconds FROM videos "
+        "WHERE title LIKE ? OR filename LIKE ? OR IFNULL(description, '') LIKE ? "
+        "ORDER BY id LIMIT ? OFFSET ?";
+    const char *sql = base_sql;
+    char pattern[256];
+    const char *like_term = NULL;
+    if (search_term && *search_term) {
+        size_t len = strnlen(search_term, sizeof(pattern) - 3);
+        pattern[0] = '%';
+        memcpy(pattern + 1, search_term, len);
+        pattern[len + 1] = '%';
+        pattern[len + 2] = '\0';
+        like_term = pattern;
+        sql = search_sql;
+    }
+    int limit_with_extra = limit + 1;
+    db_lock(db);
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        db_unlock(db);
+        return -1;
+    }
+    int param = 1;
+    if (like_term) {
+        sqlite3_bind_text(stmt, param++, like_term, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, param++, like_term, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, param++, like_term, -1, SQLITE_TRANSIENT);
+    }
+    sqlite3_bind_int(stmt, param++, limit_with_extra);
+    sqlite3_bind_int(stmt, param++, offset);
+    int emitted = 0;
+    int total_rows = 0;
+    int callback_error = 0;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        if (total_rows < limit) {
+            int id = sqlite3_column_int(stmt, 0);
+            const char *title = (const char *)sqlite3_column_text(stmt, 1);
+            const char *filename = (const char *)sqlite3_column_text(stmt, 2);
+            const char *description = (const char *)sqlite3_column_text(stmt, 3);
+            int duration = sqlite3_column_int(stmt, 4);
+            if (callback(userdata, id, title ? title : "", filename ? filename : "",
+                         description ? description : "", duration) != 0) {
+                callback_error = 1;
+                break;
+            }
+            emitted++;
+        }
+        total_rows++;
+    }
+    if (has_more_out) {
+        *has_more_out = total_rows > limit ? 1 : 0;
+    }
+    sqlite3_finalize(stmt);
+    db_unlock(db);
+    if (callback_error) {
+        return -1;
+    }
+    if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
+        return -1;
+    }
+    (void)emitted;
+    return 0;
 }
 
 int db_get_video_by_id(db_ctx_t *db, int video_id,
