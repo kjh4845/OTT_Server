@@ -9,7 +9,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/server
 COPY ./server /app/server
-RUN make
+# Host builds can leave behind macOS binaries; clean before rebuilding for Linux.
+RUN make clean && make
 
 FROM ubuntu:22.04 AS run
 ENV DEBIAN_FRONTEND=noninteractive
