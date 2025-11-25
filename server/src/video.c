@@ -1,14 +1,17 @@
+// 비디오 라이브러리 동기화, 스트리밍, 썸네일 API를 담당하는 모듈
 #include "video.h"
 
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "db.h"
@@ -16,6 +19,7 @@
 #include "http.h"
 #include "utils.h"
 
+// 공통 보안 헤더에 추가 헤더를 덧붙여 응답용 문자열을 만든다.
 static void build_header(char *dest, size_t len, server_ctx_t *server, const char *extra) {
     if (!dest || len == 0) return;
     if (extra && *extra) {
@@ -28,6 +32,7 @@ static void build_header(char *dest, size_t len, server_ctx_t *server, const cha
 #define VIDEO_DEFAULT_LIMIT 12
 #define VIDEO_MAX_LIMIT 50
 
+// URL 인코딩 해석을 위한 헥사 문자 → 값 변환
 static int hex_value(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -35,6 +40,7 @@ static int hex_value(char c) {
     return -1;
 }
 
+// 쿼리 파라미터에 있는 %XX 표현을 실제 문자로 되돌린다.
 static int url_decode_component(const char *src, size_t len, char *dst, size_t dst_len) {
     if (!src || !dst || dst_len == 0) {
         return -1;
@@ -61,6 +67,7 @@ static int url_decode_component(const char *src, size_t len, char *dst, size_t d
     return 0;
 }
 
+// name=value 쌍에서 원하는 파라미터를 추출한다.
 static int query_get_param(const char *query, const char *name, char *out, size_t out_len) {
     if (!query || !*query || !name || !out || out_len == 0) {
         return -1;
@@ -89,6 +96,7 @@ static int query_get_param(const char *query, const char *name, char *out, size_
     return -1;
 }
 
+// 정수 쿼리 파라미터를 파싱한다.
 static int query_get_int(const char *query, const char *name, int *value_out) {
     char buf[32];
     if (query_get_param(query, name, buf, sizeof(buf)) != 0) {
@@ -103,6 +111,7 @@ static int query_get_int(const char *query, const char *name, int *value_out) {
     return 0;
 }
 
+// 검색어 앞뒤 공백 제거
 static void trim_spaces(char *s) {
     if (!s) return;
     size_t len = strlen(s);
@@ -120,6 +129,92 @@ static void trim_spaces(char *s) {
     s[end - start] = '\0';
 }
 
+// 환경 변수에서 정수를 읽되 파싱 오류 시 기본값을 돌려준다.
+static int getenv_int(const char *name, int fallback) {
+    const char *value = getenv(name);
+    if (!value || !*value) {
+        return fallback;
+    }
+    char *end = NULL;
+    long v = strtol(value, &end, 10);
+    if (!end || *end != '\0') {
+        return fallback;
+    }
+    if (v < 0 || v > INT_MAX) {
+        return fallback;
+    }
+    return (int)v;
+}
+
+// media 디렉터리 변경을 감지하기 위한 상태 구조체
+typedef struct {
+    pthread_t thread;
+    int running;
+    int stop;
+    time_t last_mtime;
+    int interval_sec;
+    server_ctx_t *server;
+} media_watch_state_t;
+
+static media_watch_state_t g_media_watch = {0};
+
+// 디렉터리의 mtime을 가져온다. 실패 시 0을 반환한다.
+static time_t dir_mtime(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return 0;
+    }
+    return st.st_mtime;
+}
+
+// usleep 대신 짧게 여러 번 슬립해서 stop 플래그를 빠르게 반영한다.
+static void sleep_with_stop(media_watch_state_t *state) {
+    if (!state || state->interval_sec <= 0) return;
+    int slices = state->interval_sec * 10; // 100ms x interval_sec
+    for (int i = 0; i < slices && !state->stop; ++i) {
+        usleep(100000);
+    }
+}
+
+// media 디렉터리 변경 시 자동으로 DB와 동기화하는 백그라운드 루프
+static void *media_watch_loop(void *arg) {
+    media_watch_state_t *state = (media_watch_state_t *)arg;
+    while (!state->stop) {
+        time_t current = dir_mtime(state->server->media_dir);
+        if (current > 0 && current != state->last_mtime) {
+            if (sync_media_directory(state->server) == 0) {
+                state->last_mtime = dir_mtime(state->server->media_dir);
+                log_info("Media hot-reload: detected change, library synchronized");
+            } else {
+                log_warn("Media hot-reload: sync failed (will retry)");
+            }
+        }
+        sleep_with_stop(state);
+    }
+    return NULL;
+}
+
+// 핫리로드 워처를 시작한다. 실패해도 서버는 계속 동작한다.
+static int start_media_watcher(server_ctx_t *server) {
+    if (!server) return -1;
+    if (g_media_watch.running) return 0;
+    g_media_watch.server = server;
+    g_media_watch.interval_sec = getenv_int("MEDIA_WATCH_INTERVAL_SEC", 2);
+    if (g_media_watch.interval_sec <= 0) {
+        g_media_watch.interval_sec = 2;
+    }
+    g_media_watch.last_mtime = dir_mtime(server->media_dir);
+    g_media_watch.stop = 0;
+    if (pthread_create(&g_media_watch.thread, NULL, media_watch_loop, &g_media_watch) != 0) {
+        log_warn("Media hot-reload watcher disabled (thread creation failed)");
+        memset(&g_media_watch, 0, sizeof(g_media_watch));
+        return -1;
+    }
+    g_media_watch.running = 1;
+    return 0;
+}
+
+// 사용자별 재생 위치를 보관하는 맵 구조체
 typedef struct {
     int video_id;
     double position;
@@ -131,6 +226,7 @@ typedef struct {
     size_t capacity;
 } resume_map_t;
 
+// 디렉터리 스캔 시 파일명을 임시로 저장하는 동적 배열
 typedef struct {
     char **items;
     size_t count;
@@ -156,6 +252,7 @@ static void filename_list_free(filename_list_t *list) {
     list->capacity = 0;
 }
 
+// realloc을 이용해 파일명 배열 크기를 자동 확장한다.
 static int filename_list_add(filename_list_t *list, const char *name) {
     if (!list || !name) return -1;
     if (list->count == list->capacity) {
@@ -177,6 +274,7 @@ static int filename_list_add(filename_list_t *list, const char *name) {
     return 0;
 }
 
+// 비디오 ID별 마지막 재생 지점을 저장한다.
 static int resume_map_add(resume_map_t *map, int video_id, double position) {
     if (!map) return -1;
     for (size_t i = 0; i < map->count; ++i) {
@@ -210,6 +308,7 @@ static const resume_entry_t *resume_map_find(const resume_map_t *map, int video_
     return NULL;
 }
 
+// db_list_watch_history 콜백에서 resume_map을 채운다.
 static int collect_resume(void *userdata, int video_id, double position_seconds, const char *updated_at) {
     (void)updated_at;
     resume_map_t *map = userdata;
@@ -222,6 +321,7 @@ static int has_mp4_extension(const char *name) {
     return strcasecmp(ext, ".mp4") == 0;
 }
 
+// 파일명에서 확장자와 언더스코어를 제거해 사람이 읽을 제목을 만든다.
 static void make_title(const char *filename, char *title, size_t len) {
     if (!filename || !title || len == 0) return;
     const char *base = filename;
@@ -243,6 +343,7 @@ static void make_title(const char *filename, char *title, size_t len) {
     }
 }
 
+// media 디렉터리를 스캔하여 DB와 동기화한다.
 static int sync_media_directory(server_ctx_t *server) {
     DIR *dir = opendir(server->media_dir);
     if (!dir) {
@@ -255,6 +356,7 @@ static int sync_media_directory(server_ctx_t *server) {
     while ((ent = readdir(dir)) != NULL) {
         if (ent->d_name[0] == '.') continue;
         if (!has_mp4_extension(ent->d_name)) continue;
+        // 비디오 파일명에서 자동으로 제목을 만들어 DB에 upsert 한다.
         char title[256];
         make_title(ent->d_name, title, sizeof(title));
         if (db_upsert_video(&server->db, title, ent->d_name, NULL, 0, NULL) != 0) {
@@ -281,9 +383,17 @@ static int sync_media_directory(server_ctx_t *server) {
     return 0;
 }
 
+// 서버 시작 시 미디어 디렉터리를 한 번 동기화한다.
 int video_initialize(server_ctx_t *server) {
     if (!server) return -1;
-    return sync_media_directory(server);
+    int rc = sync_media_directory(server);
+    if (rc != 0) {
+        return rc;
+    }
+    if (start_media_watcher(server) != 0) {
+        log_warn("Media hot-reload watcher is not running; new files will appear on next API call");
+    }
+    return 0;
 }
 
 typedef struct {
@@ -294,6 +404,7 @@ typedef struct {
     size_t emitted;
 } list_ctx_t;
 
+// 비디오 리스트 JSON 배열에 한 항목을 추가한다.
 static int append_video_row(void *userdata, int id, const char *title,
                             const char *filename, const char *description,
                             int duration_seconds) {
@@ -301,6 +412,7 @@ static int append_video_row(void *userdata, int id, const char *title,
     request_ctx_t *ctx = data->ctx;
     double resume = 0;
     int has_resume = 0;
+    // history map에서 이 비디오에 대한 마지막 재생 지점을 찾는다.
     const resume_entry_t *entry = resume_map_find(data->history, id);
     if (entry) {
         resume = entry->position;
@@ -329,6 +441,7 @@ static int append_video_row(void *userdata, int id, const char *title,
     return 0;
 }
 
+// /api/videos: 페이지네이션, 검색, 재생 위치를 포함한 목록을 반환한다.
 void video_handle_list(request_ctx_t *ctx) {
     if (!ctx->authenticated) {
         router_send_json_error(ctx, 401, "Unauthorized");
@@ -356,6 +469,7 @@ void video_handle_list(request_ctx_t *ctx) {
             has_query = 1;
         }
     }
+    // 사용자별 시청 기록을 읽어와 resume_map에 채워 넣는다.
     resume_map_t map = {0};
     if (db_list_watch_history(&ctx->server->db, ctx->user_id, collect_resume, &map) != 0) {
         resume_map_free(&map);
@@ -382,6 +496,7 @@ void video_handle_list(request_ctx_t *ctx) {
         router_send_json_error(ctx, 500, "Failed to query videos");
         return;
     }
+    // 다음 페이지 커서 및 쿼리 문자열을 응답 본문에 포함시킨다.
     int next_cursor = cursor + (int)data.emitted;
     if (sb_append(&sb, "],\"cursor\":%d,\"limit\":%d,\"nextCursor\":%d,\"hasMore\":%s,\"query\":",
                   cursor, limit, next_cursor, has_more ? "true" : "false") != 0) {
@@ -429,6 +544,7 @@ static int parse_int(const char *s) {
     return (int)v;
 }
 
+// HTTP Range 헤더를 파싱해 시작/끝 바이트를 계산한다.
 static int parse_range_header(const char *header, off_t file_size, off_t *start_out, off_t *end_out) {
     if (!header || !start_out || !end_out) return -1;
     if (strncmp(header, "bytes=", 6) != 0) {
@@ -461,6 +577,7 @@ static int parse_range_header(const char *header, off_t file_size, off_t *start_
     return 0;
 }
 
+// /api/videos/:id/stream: MP4 파일을 Range 스트리밍한다.
 void video_handle_stream(request_ctx_t *ctx) {
     if (!ctx->authenticated) {
         router_send_json_error(ctx, 401, "Unauthorized");
@@ -515,6 +632,7 @@ void video_handle_stream(request_ctx_t *ctx) {
     }
 }
 
+// /api/videos/:id/thumbnail: 캐시된 썸네일 이미지를 내려준다.
 void video_handle_thumbnail(request_ctx_t *ctx) {
     if (!ctx->authenticated) {
         router_send_json_error(ctx, 401, "Unauthorized");
@@ -547,4 +665,14 @@ void video_handle_thumbnail(request_ctx_t *ctx) {
                                 thumb_path, 0, 0, 0, headers) != 0) {
         log_warn("Failed to send thumbnail for video %d", video_id);
     }
+}
+
+// 서버 종료 시 백그라운드 워처 스레드를 정리한다.
+void video_shutdown(void) {
+    if (!g_media_watch.running) {
+        return;
+    }
+    g_media_watch.stop = 1;
+    pthread_join(g_media_watch.thread, NULL);
+    memset(&g_media_watch, 0, sizeof(g_media_watch));
 }

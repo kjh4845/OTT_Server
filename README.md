@@ -8,12 +8,13 @@ High-performance OTT-style media server implemented in C11 using POSIX sockets, 
 - **Custom HTTP stack** – epoll-based event loop with worker pool, manual HTTP parsing, static file serving, and Range (206) streaming via `sendfile` when available.
 - **Authentication & sessions** – salted PBKDF2-HMAC-SHA256 password hashing with OpenSSL, cookie-based sessions stored in SQLite with configurable TTL.
 - **Self-service onboarding** – built-in registration endpoint with duplicate checks and automatic session issuance.
-- **Media catalogue** – automatic discovery of `.mp4` files, metadata stored in SQLite, and JSON APIs for listing and streaming.
+- **Media catalogue** – automatic discovery of `.mp4` files, metadata stored in SQLite, JSON APIs for listing/streaming, plus a background watcher that hot-reloads new files dropped into `media/` without restarting the server.
 - **Discovery UX** – keyword search with cursor-based pagination feeds the Pinterest-style infinite scroll UI.
 - **Watch history** – progress tracking with resumable playback, persisted per-user in SQLite.
 - **FFmpeg thumbnails** – on-demand capture of poster frames cached to disk.
 - **Front-end** – simple UI for login, library browsing, and playback with resume prompts; video cards are fully clickable for faster navigation.
 - **Container support** – multi-stage Dockerfile and `docker-compose.yml` for turnkey deployment.
+- **QUIC edge** – optional Caddy-based HTTP/3 front door that proxies all API/static/video traffic over QUIC on port `8443`.
 
 ## Project layout
 
@@ -37,6 +38,7 @@ The server reads environment variables (defaults shown):
 | `MEDIA_DIR` | Directory containing MP4 assets | `./media` (or `/app/media` in Docker) |
 | `THUMB_DIR` | Thumbnail cache directory | `./web/thumbnails` |
 | `SESSION_TTL_HOURS` | Session lifetime in hours | `24` |
+| `MEDIA_WATCH_INTERVAL_SEC` | Polling interval for the media hot-reload watcher | `2` |
 | `DB_PATH` | Optional override for SQLite file | `data/app.db` |
 
 The SQLite schema is defined in `server/schema.sql`. On first launch the server seeds default accounts for smoke testing:
@@ -83,6 +85,15 @@ docker compose logs -f
 ```
 
 Volumes mount the host `media/`, `web/thumbnails/`, and `data/` directories into the container, ensuring media, cached thumbnails, and the SQLite database persist across restarts.
+
+## QUIC / HTTP/3 edge
+
+An optional Caddy front door is included as the `quic-edge` service in `docker-compose.yml`. It listens on `8443` (TCP+UDP), terminates TLS with an internal CA, speaks HTTP/3/QUIC to clients, and reverse-proxies all traffic to the C server on port `3000`.
+
+- Start both services: `docker compose up -d ott quic-edge`
+- Health check: `curl -k https://localhost:8443/healthz`
+- QUIC test: `curl --http3 -k https://localhost:8443/api/videos`
+- Browser: visit `https://localhost:8443` and accept the self-signed cert (HTTP/3 is used automatically when supported).
 
 ## API overview
 
@@ -131,3 +142,14 @@ All API responses are JSON; errors return payloads of the form `{"error":"messag
 - **Front-end onboarding** – the sign-in page ships with an inline registration form, real-time validations, and success/error messaging so first-time users can provision accounts without leaving the page.
 - **Discovery UX overhaul** – the library page adds a search bar with clear controls plus a Pinterest-style infinite scroll fed by an `IntersectionObserver`, complete with loading pills and "마지막 콘텐츠입니다." terminal messaging.
 - **Styling polish** – shared CSS introduces helper classes for the new UI components (divider, search bar, loading pill, ghost buttons) to keep login and library surfaces visually aligned.
+
+## 2025-11-23 Updates
+
+- **Media hot-reload thread** – a lightweight watcher now polls `media/` (interval via `MEDIA_WATCH_INTERVAL_SEC`) and resyncs the DB automatically when files are added or removed while the server is running.
+- **HTTP/3/QUIC edge** – added a Caddy-based `quic-edge` service on port `8443` (TCP+UDP) that speaks HTTP/3 to clients and proxies to the C server, enabling QUIC delivery for API, static assets, and video streams.
+
+## 오늘 작업 요약
+
+- QUIC/HTTP3 엣지 추가: Caddy 프록시가 `8443`(TCP/UDP)에서 TLS+HTTP3로 받아 내부 `ott:3000`(HTTP/1.1 백엔드)으로 전달하도록 구성. 백엔드는 HTTP/1.1만 지원하므로 Caddy 전송을 `versions h1.1`으로 고정.
+- 핫리로드 강화: `media/` 디렉터리 mtime을 감시하는 백그라운드 스레드가 추가되어, 서버 재시작 없이 신규 MP4 추가/삭제를 DB에 자동 반영(`MEDIA_WATCH_INTERVAL_SEC` 조정 가능).
+- 동작 확인: `curl -vk https://localhost:8443/healthz`(TLS/h3 광고), `curl --http3 -k https://localhost:8443/api/videos`로 프록시/HTTP3 확인. 백엔드 직접 확인은 `http://localhost:3000`.

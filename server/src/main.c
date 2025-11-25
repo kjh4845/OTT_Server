@@ -1,3 +1,4 @@
+// 메인 이벤트 루프 및 서버 초기화를 담당하는 엔트리 포인트 파일
 #include "auth.h"
 #include "ffmpeg.h"
 #include "history.h"
@@ -28,15 +29,18 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+// 에지 트리거 I/O 대기 시 한 번에 수용할 최대 이벤트 수
 #define MAX_EVENTS 128
 
 static volatile sig_atomic_t g_running = 1;
 
+// SIGINT/SIGTERM을 받으면 메인 루프가 종료되도록 플래그만 갱신한다.
 static void handle_signal(int signum) {
     (void)signum;
     g_running = 0;
 }
 
+// 논블로킹 소켓으로 전환한다.
 static int make_nonblocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags == -1) {
@@ -48,6 +52,7 @@ static int make_nonblocking(int fd) {
     return 0;
 }
 
+// 블로킹 소켓으로 되돌린다. 워커 스레드에서 요청을 처리할 때 사용한다.
 static int make_blocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags == -1) {
@@ -59,6 +64,7 @@ static int make_blocking(int fd) {
     return 0;
 }
 
+// TCP 서버 소켓을 만들고 논블로킹 상태로 리스닝 준비까지 마친다.
 static int create_listen_socket(int port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
@@ -86,6 +92,7 @@ static int create_listen_socket(int port) {
     return fd;
 }
 
+// 기본 디렉터리 + 상대 경로를 조합한 결과를 out 버퍼에 채운다.
 static int join_path(const char *base, const char *path, char *out, size_t len) {
     if (snprintf(out, len, "%s/%s", base, path) >= (int)len) {
         return -1;
@@ -93,6 +100,7 @@ static int join_path(const char *base, const char *path, char *out, size_t len) 
     return 0;
 }
 
+// 정적 파일 확장자에 맞춰 심플한 MIME 타입을 선택한다.
 static const char *mime_type_for_path(const char *path) {
     const char *ext = strrchr(path, '.');
     if (!ext) return "application/octet-stream";
@@ -109,6 +117,7 @@ static const char *mime_type_for_path(const char *path) {
     return "application/octet-stream";
 }
 
+// 경로 순회 공격을 방지하기 위해 ".." 토큰을 거부한다.
 static int is_safe_path(const char *path) {
     if (strstr(path, "..")) {
         return 0;
@@ -116,6 +125,7 @@ static int is_safe_path(const char *path) {
     return 1;
 }
 
+// API 응답 패턴을 재사용하기 위한 JSON 에러 헬퍼
 static int send_json_error(server_ctx_t *server, int fd, int status, const char *message) {
     char body[512];
     int len = snprintf(body, sizeof(body), "{\"error\":\"%s\"}", message ? message : "error");
@@ -126,6 +136,7 @@ static int send_json_error(server_ctx_t *server, int fd, int status, const char 
                                body, (size_t)len, server->security_headers);
 }
 
+// 웹 클라이언트 정적 자산(css/js/html 등)을 찾아 내려준다.
 static int serve_static_file(server_ctx_t *server, request_ctx_t *ctx) {
     const char *path = ctx->request->path;
     if (!path || !*path) {
@@ -161,6 +172,7 @@ typedef struct client_task {
     int fd;
 } client_task_t;
 
+// 워커 스레드에서 실행되며 HTTP 요청 파싱 → 라우팅 → 응답까지 담당한다.
 static void handle_client(void *arg) {
     client_task_t *task = (client_task_t *)arg;
     server_ctx_t *server = task->server;
@@ -194,6 +206,7 @@ static void handle_client(void *arg) {
     close(fd);
 }
 
+// 환경 변수 또는 후보 경로 목록에서 우선순위대로 경로를 선택한다.
 static void choose_path(const char *env_name, const char *candidates[], size_t count,
                         char *out, size_t len, int ensure_dir) {
     const char *value = getenv(env_name);
@@ -230,6 +243,7 @@ static void choose_path(const char *env_name, const char *candidates[], size_t c
 }
 
 int main(void) {
+    // 신호 처리기 등록: Ctrl+C(SIGINT) 등으로 안전하게 종료한다.
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
     signal(SIGPIPE, SIG_IGN);
@@ -237,6 +251,7 @@ int main(void) {
     server_ctx_t server;
     memset(&server, 0, sizeof(server));
 
+    // 모든 응답에 공통으로 추가할 보안 헤더 세트
     const char *security =
         "X-Content-Type-Options: nosniff\r\n"
         "X-Frame-Options: DENY\r\n"
@@ -345,6 +360,7 @@ int main(void) {
         return 1;
     }
 
+    // 라우터가 참조할 HTTP 엔드포인트 테이블 정의
     route_entry_t routes[] = {
         {HTTP_POST, "/api/auth/login", auth_handle_login},
         {HTTP_POST, "/api/auth/register", auth_handle_register},
@@ -367,9 +383,10 @@ int main(void) {
     }
     server.listen_fd = listen_fd;
 
-    server.epoll_fd = -1;
+    server.epoll_fd = -1; // non-Linux 환경에서는 poll()을 사용할 수 있으므로 기본값은 -1
 
 #if USE_EPOLL
+    // Linux 환경에서는 epoll로 대량 접속을 효율적으로 감지한다.
     int epoll_fd = epoll_create1(0);
     if (epoll_fd < 0) {
         log_error("Failed to create epoll instance");
@@ -396,6 +413,7 @@ int main(void) {
 
     struct epoll_event events[MAX_EVENTS];
     while (g_running) {
+        // epoll_wait으로 새 연결/데이터 도착을 기다린다.
         int n = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
         if (n < 0) {
             if (errno == EINTR) {
@@ -449,6 +467,7 @@ int main(void) {
         server.epoll_fd = -1;
     }
 #else
+    // epoll을 쓸 수 없는 플랫폼(BSD, macOS 등)은 poll() 기반 루프를 사용한다.
     log_info("Server listening on port %d", server.port);
     struct pollfd fds[MAX_EVENTS];
     nfds_t fd_count = 1;
@@ -524,6 +543,7 @@ int main(void) {
 
     log_info("Shutting down...");
     close(listen_fd);
+    video_shutdown();
     thread_pool_destroy(&server.pool);
     db_close(&server.db);
     return 0;

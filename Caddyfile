@@ -1,0 +1,28 @@
+# HTTP/3(QUIC) edge proxy that fronts the C server.
+# Caddy enables HTTP/3 automatically when TLS is present; the protocols
+# line below makes it explicit for clarity.
+{
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+localhost:8443, 127.0.0.1:8443 {
+    tls internal
+    encode gzip zstd
+
+    @health {
+        path /healthz
+    }
+    respond @health 200 {
+        body "ok"
+    }
+
+    reverse_proxy http://ott:3000 {
+        flush_interval -1
+        transport http {
+            # Backend only speaks HTTP/1.1; disable h2c to avoid resets.
+            versions h1.1
+        }
+    }
+}

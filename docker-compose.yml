@@ -17,3 +17,21 @@ services:
       - ./web/thumbnails:/app/web/thumbnails
       - ./data:/app/data
     restart: unless-stopped
+
+  quic-edge:
+    image: caddy:2.8
+    container_name: ott-c-quic
+    depends_on:
+      - ott
+    ports:
+      - "8443:8443"
+      - "8443:8443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
