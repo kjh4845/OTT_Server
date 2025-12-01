@@ -1,6 +1,8 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+// 서버 전반에서 사용하는 범용 헬퍼 함수 선언
+
 #include <stddef.h>
 #include <stdint.h>
 #include <time.h>
@@ -18,9 +20,9 @@ void log_warn(const char *fmt, ...);
 void log_error(const char *fmt, ...);
 
 typedef struct {
-    char *data;
-    size_t length;
-    size_t capacity;
+    char *data;      // 널 종료된 가변 버퍼
+    size_t length;   // 현재 문자열 길이
+    size_t capacity; // 할당된 총 크기
 } string_builder_t;
 
 int sb_init(string_builder_t *sb, size_t initial_capacity);

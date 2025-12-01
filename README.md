@@ -147,9 +147,3 @@ All API responses are JSON; errors return payloads of the form `{"error":"messag
 
 - **Media hot-reload thread** – a lightweight watcher now polls `media/` (interval via `MEDIA_WATCH_INTERVAL_SEC`) and resyncs the DB automatically when files are added or removed while the server is running.
 - **HTTP/3/QUIC edge** – added a Caddy-based `quic-edge` service on port `8443` (TCP+UDP) that speaks HTTP/3 to clients and proxies to the C server, enabling QUIC delivery for API, static assets, and video streams.
-
-## 오늘 작업 요약
-
-- QUIC/HTTP3 엣지 추가: Caddy 프록시가 `8443`(TCP/UDP)에서 TLS+HTTP3로 받아 내부 `ott:3000`(HTTP/1.1 백엔드)으로 전달하도록 구성. 백엔드는 HTTP/1.1만 지원하므로 Caddy 전송을 `versions h1.1`으로 고정.
-- 핫리로드 강화: `media/` 디렉터리 mtime을 감시하는 백그라운드 스레드가 추가되어, 서버 재시작 없이 신규 MP4 추가/삭제를 DB에 자동 반영(`MEDIA_WATCH_INTERVAL_SEC` 조정 가능).
-- 동작 확인: `curl -vk https://localhost:8443/healthz`(TLS/h3 광고), `curl --http3 -k https://localhost:8443/api/videos`로 프록시/HTTP3 확인. 백엔드 직접 확인은 `http://localhost:3000`.

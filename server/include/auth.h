@@ -1,6 +1,8 @@
 #ifndef AUTH_H
 #define AUTH_H
 
+// 인증, 세션 관리, 로그인/회원가입 엔드포인트 선언
+
 #include <stddef.h>
 
 #include "router.h"

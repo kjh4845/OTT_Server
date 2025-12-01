@@ -1,3 +1,4 @@
+// URL 패턴 → 핸들러 매핑을 수행하는 초간단 라우터
 #include "router.h"
 
 #include <stdio.h>
@@ -8,11 +9,13 @@
 static const route_entry_t *g_routes = NULL;
 static size_t g_route_count = 0;
 
+// 서버 부팅 시 라우팅 테이블을 등록한다.
 void router_set_routes(const route_entry_t *routes, size_t count) {
     g_routes = routes;
     g_route_count = count;
 }
 
+// path parameter(":id" 등)를 조회한다.
 const char *router_get_param(const request_ctx_t *ctx, const char *name) {
     for (size_t i = 0; i < ctx->param_count; ++i) {
         if (strcmp(ctx->params[i].key, name) == 0) {
@@ -22,6 +25,7 @@ const char *router_get_param(const request_ctx_t *ctx, const char *name) {
     return NULL;
 }
 
+// 라우트 segment와 실제 경로 segment가 일치하는지 비교한다.
 static int segment_match(const char *route_seg, const char *path_seg, request_ctx_t *ctx) {
     if (route_seg[0] == ':' && ctx) {
         if (ctx->param_count < sizeof(ctx->params) / sizeof(ctx->params[0])) {
@@ -37,6 +41,7 @@ static int segment_match(const char *route_seg, const char *path_seg, request_ct
     return strcmp(route_seg, path_seg) == 0;
 }
 
+// 전체 경로(`/api/videos/:id`)와 요청 경로(`/api/videos/10`)를 비교한다.
 static int path_matches(const char *route_path, const char *request_path, request_ctx_t *ctx) {
     char route_buf[512];
     char path_buf[512];
@@ -62,6 +67,7 @@ static int path_matches(const char *route_path, const char *request_path, reques
     return 1;
 }
 
+// 라우팅 테이블을 순회하며 첫 번째 일치 항목을 찾아 실행한다.
 void router_handle(request_ctx_t *ctx) {
     ctx->param_count = 0;
     for (size_t i = 0; i < g_route_count; ++i) {
@@ -79,6 +85,7 @@ void router_handle(request_ctx_t *ctx) {
                        body, sizeof(body) - 1, ctx->server->security_headers);
 }
 
+// JSON 응답을 표준 보안 헤더와 함께 내려준다.
 int router_send_json(request_ctx_t *ctx, int status, const char *json_body, const char *extra_headers) {
     if (!json_body) {
         json_body = "{}";
@@ -97,6 +104,7 @@ int router_send_json(request_ctx_t *ctx, int status, const char *json_body, cons
                               json_body, json_len, headers);
 }
 
+// 에러 메시지를 JSON 형태로 감싸는 헬퍼
 int router_send_json_error(request_ctx_t *ctx, int status, const char *message) {
     char body[512];
     if (!message) {

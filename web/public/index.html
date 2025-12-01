@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
+    <!-- 로그인 및 회원가입 카드 -->
     <main>
       <section class="login-card">
         <header>
@@ -15,6 +16,7 @@
             <p>Sign in to browse and stream your media library.</p>
           </div>
         </header>
+        <!-- 로그인 폼: 기존 계정으로 로그인 -->
         <form id="login-form" novalidate>
           <div class="input-group">
             <label for="username">Username</label>
@@ -28,6 +30,7 @@
           <div id="login-error" class="alert error" style="display:none"></div>
         </form>
         <div class="form-divider"><span>Or create a new account</span></div>
+        <!-- 회원가입 폼: 신규 사용자 생성 -->
         <form id="register-form" novalidate>
           <div class="input-group">
             <label for="register-username">Username</label>
@@ -67,6 +70,7 @@
         <small class="helper-text">Default credentials are still available: <strong>test / test1234</strong></small>
       </section>
     </main>
+    <!-- 공통 API 유틸과 로그인 로직 -->
     <script src="/js/api.js" defer></script>
     <script src="/js/login.js" defer></script>
   </body>

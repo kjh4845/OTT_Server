@@ -1,3 +1,4 @@
+// 비디오 라이브러리 페이지: 무한 스크롤 목록 + 검색 기능
 (async function () {
   let user;
   try {
@@ -66,6 +67,7 @@
   updateClearButton();
 
   if (sentinel && 'IntersectionObserver' in window) {
+    // 스크롤 최하단 근처에 도달하면 다음 페이지를 불러온다.
     const observer = new IntersectionObserver((entries) => {
       if (!entries[0].isIntersecting) {
         return;
@@ -77,6 +79,7 @@
 
   await loadPage({ reset: true });
 
+  // 서버에서 일정 개수의 비디오를 가져와 렌더링한다.
   async function loadPage({ reset = false } = {}) {
     if (state.isLoading) {
       return;
@@ -101,6 +104,7 @@
       }
     }
     try {
+      // limit/cursor를 쿼리로 전달해 서버에서 페이지네이션
       const params = new URLSearchParams({ limit: state.limit.toString(), cursor: state.cursor.toString() });
       if (state.query) {
         params.set('q', state.query);
@@ -135,6 +139,7 @@
       return;
     }
     videos.forEach((video) => {
+      // 하나의 비디오 카드를 구성하고 클릭 시 플레이어 페이지로 이동시킨다.
       const card = document.createElement('article');
       card.className = 'video-card video-card--link';
       card.tabIndex = 0;

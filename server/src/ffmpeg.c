@@ -1,3 +1,4 @@
+// 썸네일 생성을 위해 외부 ffmpeg CLI를 호출하는 래퍼
 #include "ffmpeg.h"
 
 #include <errno.h>
@@ -11,6 +12,7 @@
 
 #include "utils.h"
 
+// 썸네일을 저장할 디렉터리가 존재하는지 확인한다.
 int ffmpeg_initialize(server_ctx_t *server) {
     if (!server) return -1;
     if (ensure_directory(server->thumb_dir) != 0) {
@@ -20,6 +22,7 @@ int ffmpeg_initialize(server_ctx_t *server) {
     return 0;
 }
 
+// 비디오의 변경 시각을 확인해 필요한 경우 새로 썸네일을 생성한다.
 int ffmpeg_ensure_thumbnail(server_ctx_t *server, int video_id,
                             const char *video_path, char *thumb_path,
                             size_t thumb_path_len) {
@@ -40,6 +43,7 @@ int ffmpeg_ensure_thumbnail(server_ctx_t *server, int video_id,
         }
     }
 
+    // 별도 프로세스로 ffmpeg를 실행해 서버 프로세스가 블로킹되지 않게 한다.
     pid_t pid = fork();
     if (pid == 0) {
         execlp("ffmpeg", "ffmpeg", "-y", "-loglevel", "error", "-ss", "5",

@@ -1,3 +1,4 @@
+// 소켓에서 HTTP 요청을 읽고, 헤더 파싱/응답 송신을 담당하는 저수준 유틸
 #include "http.h"
 #include "utils.h"
 
@@ -22,11 +23,13 @@
 #define HTTP_INITIAL_BUFFER 8192
 #define HTTP_MAX_BUFFER (8 * 1024 * 1024)
 
+// 구조체를 초기화해 모든 포인터를 NULL/0으로 만든다.
 static void request_init(http_request_t *req) {
     memset(req, 0, sizeof(*req));
     req->method = HTTP_UNKNOWN;
 }
 
+// 문자열 메서드를 enum 값으로 매핑한다.
 http_method_t http_method_from_string(const char *method) {
     if (strcmp(method, "GET") == 0) return HTTP_GET;
     if (strcmp(method, "POST") == 0) return HTTP_POST;
@@ -36,6 +39,7 @@ http_method_t http_method_from_string(const char *method) {
     return HTTP_UNKNOWN;
 }
 
+// 요청 본문을 모두 담을 수 있도록 버퍼 크기를 동적으로 늘린다.
 static int ensure_capacity(http_request_t *req, char **buffer, size_t *capacity, size_t required) {
     if (required <= *capacity) {
         return 0;
@@ -62,6 +66,7 @@ static int ensure_capacity(http_request_t *req, char **buffer, size_t *capacity,
     return 0;
 }
 
+// 소켓에서 HTTP 요청 전체(헤더+본문)를 읽어 http_request_t로 변환한다.
 int http_parse_request(int fd, http_request_t *req, char *buffer, size_t bufsize) {
     request_init(req);
     size_t capacity = buffer ? bufsize : HTTP_INITIAL_BUFFER;
@@ -80,6 +85,7 @@ int http_parse_request(int fd, http_request_t *req, char *buffer, size_t bufsize
     size_t total = 0;
     char *header_end = NULL;
     while (!header_end) {
+        // recv()를 반복 호출해 헤더의 끝(\r\n\r\n)이 나올 때까지 읽는다.
         if (total + 1 >= capacity) {
             if (ensure_capacity(req, &raw, &capacity, total + 1) != 0) {
                 goto fail;
@@ -164,6 +170,7 @@ int http_parse_request(int fd, http_request_t *req, char *buffer, size_t bufsize
         goto fail;
     }
     if (content_length > available_body) {
+        // 아직 읽히지 않은 본문이 있다면 정확한 길이만큼 추가로 읽는다.
         size_t missing = content_length - available_body;
         if (ensure_capacity(req, &raw, &capacity, header_len + content_length + 1) != 0) {
             goto fail;
@@ -199,6 +206,7 @@ fail:
     return -1;
 }
 
+// 헤더 배열을 순회하며 대소문자 무시 비교로 찾는다.
 const char *http_get_header(const http_request_t *req, const char *name) {
     for (size_t i = 0; i < req->header_count; ++i) {
         if (strcasecmp(req->headers[i].name, name) == 0) {
@@ -208,6 +216,7 @@ const char *http_get_header(const http_request_t *req, const char *name) {
     return NULL;
 }
 
+// send()가 짧게 보낼 수 있으므로 전체가 전송될 때까지 반복한다.
 static int send_all(int fd, const void *buf, size_t len) {
     const unsigned char *p = buf;
     size_t sent = 0;
@@ -221,6 +230,7 @@ static int send_all(int fd, const void *buf, size_t len) {
     return 0;
 }
 
+// 메모리에 있는 본문을 한 번에 내려주는 단순 응답 빌더
 int http_send_response(int fd, int status, const char *status_text,
                        const char *content_type, const void *body, size_t length,
                        const char *extra_headers) {
@@ -265,6 +275,7 @@ int http_send_response(int fd, int status, const char *status_text,
     return 0;
 }
 
+// 파일 디스크립터를 열어 클라이언트로 스트리밍한다. Range 지원 옵션 포함
 int http_send_file_response(int fd, int status, const char *status_text,
                             const char *content_type, const char *file_path,
                             off_t offset, size_t length, int sendfile_enabled,
@@ -357,6 +368,7 @@ done:
     return rc;
 }
 
+// malloc으로 확보한 버퍼를 해제하고 구조체를 초기화한다.
 void http_free_request(http_request_t *req) {
     if (req->owns_raw_data && req->raw_data) {
         free(req->raw_data);
@@ -364,6 +376,7 @@ void http_free_request(http_request_t *req) {
     request_init(req);
 }
 
+// HTTP 상태 코드에 대응하는 기본 Reason-Phrase를 돌려준다.
 const char *http_status_text(int status) {
     switch (status) {
         case 200: return "OK";

@@ -1,6 +1,8 @@
+// 클라이언트 측에서 재사용하는 fetch 래퍼와 라우팅 유틸 모음
 const api = (() => {
   const baseHeaders = { 'Content-Type': 'application/json' };
 
+  // SPA가 아니므로 단순히 pathname을 정규화해 중복 이동을 방지한다.
   function normalizePath(path) {
     if (!path) {
       return '/';
@@ -17,6 +19,7 @@ const api = (() => {
     }
   }
 
+  // 동일한 경로로 중복 이동하지 않도록 하고 history replace 지원
   function navigateTo(path, options = {}) {
     if (typeof path !== 'string' || path.length === 0) {
       return;
@@ -42,6 +45,7 @@ const api = (() => {
     }
   }
 
+  // 기본 헤더/credentials를 설정한 fetch 래퍼
   async function request(path, options = {}) {
     const opts = {
       credentials: 'include',
@@ -68,6 +72,7 @@ const api = (() => {
     return payload;
   }
 
+  // /api/auth/me를 호출해 세션이 유효하면 사용자 정보를 돌려준다.
   async function me() {
     try {
       return await request('/api/auth/me');
@@ -79,6 +84,7 @@ const api = (() => {
     }
   }
 
+  // 인증이 필수인 페이지에서 사용: 없으면 401 에러 throw
   async function requireAuth() {
     const user = await me();
     if (user) {
@@ -108,6 +114,7 @@ const api = (() => {
   };
 })();
 
+// 초 단위 시간을 "분:초" 혹은 "시:분:초"로 포맷한다.
 function formatSeconds(seconds) {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return '0:00';
@@ -121,6 +128,7 @@ function formatSeconds(seconds) {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
+// URLSearchParams 헬퍼
 function queryParam(name) {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);

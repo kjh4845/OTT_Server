@@ -1,3 +1,4 @@
+/* 전역 컬러 팔레트와 다크 모드 용 CSS 변수 */
 :root {
   color-scheme: dark light;
   --bg-color: #121417;
@@ -8,10 +9,12 @@
   --danger-color: #ff5f57;
 }
 
+/* 모든 요소에 박스 모델 일관성 부여 */
 * {
   box-sizing: border-box;
 }
 
+/* 앱 기본 배경과 폰트 설정 */
 body {
   margin: 0;
   font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -22,6 +25,7 @@ body {
   flex-direction: column;
 }
 
+/* 페이지 최상단 툴바 */
 header {
   display: flex;
   justify-content: space-between;
@@ -29,12 +33,14 @@ header {
   padding: 1.5rem clamp(1rem, 4vw, 3rem);
 }
 
+/* 중앙 컨텐츠 너비 제한 */
 main {
   flex: 1;
   width: min(1100px, 95vw);
   margin: 0 auto 3rem;
 }
 
+/* 버튼 스타일: 기본, 링크 형태 모두 커버 */
 button, .btn {
   appearance: none;
   border: none;
@@ -48,6 +54,7 @@ button, .btn {
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
+/* 호버 시 살짝 떠오르는 효과 */
 button:hover, .btn:hover {
   transform: translateY(-2px);
   background: #3c9df7;
@@ -66,6 +73,7 @@ button.secondary:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* 유리 효과 카드 공통 스타일 */
 .login-card, .video-card, .resume-banner {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -74,6 +82,7 @@ button.secondary:hover {
   backdrop-filter: blur(16px);
 }
 
+/* 로그인/회원가입 카드 컨테이너 */
 .login-card {
   margin: auto;
   padding: clamp(2rem, 5vw, 3rem);
@@ -93,6 +102,7 @@ button.secondary:hover {
   color: rgba(255, 255, 255, 0.75);
 }
 
+/* 폼 필드 스택 배치 */
 .input-group {
   display: flex;
   flex-direction: column;
@@ -116,6 +126,7 @@ button.secondary:hover {
   outline: 2px solid var(--accent-color);
 }
 
+/* 로그인/회원가입 구분선 */
 .form-divider {
   display: flex;
   align-items: center;
@@ -138,12 +149,14 @@ button.secondary:hover {
   text-align: center;
 }
 
+/* 영상 카드 레이아웃 */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 1.5rem;
 }
 
+/* 영상 카드 공통 구성 */
 .video-card {
   overflow: hidden;
   display: flex;
@@ -188,6 +201,7 @@ button.secondary:hover {
   color: rgba(255, 255, 255, 0.6);
 }
 
+/* 폼 에러/성공 배너 */
 .alert {
   padding: 0.75rem 1rem;
   border-radius: 0.75rem;
@@ -207,6 +221,7 @@ button.secondary:hover {
   color: #aef5cd;
 }
 
+/* 플레이어 페이지 상단 재개 안내 */
 .resume-banner {
   padding: 1rem 1.5rem;
   display: flex;
@@ -216,6 +231,7 @@ button.secondary:hover {
   margin-bottom: 1.5rem;
 }
 
+/* 비디오 태그 주변 배경 */
 .video-wrapper {
   width: 100%;
   background: rgba(0, 0, 0, 0.4);
@@ -228,6 +244,7 @@ button.secondary:hover {
   margin-bottom: 1.5rem;
 }
 
+/* 검색 박스 */
 .search-bar {
   display: flex;
   flex-wrap: wrap;
@@ -271,6 +288,7 @@ button.secondary:hover {
   visibility: hidden;
 }
 
+/* 무한 스크롤 로딩 표시 */
 .loading-pill {
   display: none;
   align-items: center;
@@ -304,6 +322,7 @@ button.secondary:hover {
   height: 1px;
 }
 
+/* 스크린리더 접근성 텍스트 */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -325,6 +344,7 @@ button.secondary:hover {
   }
 }
 
+/* 플레이어 기본 크기 */
 video {
   width: 100%;
   height: auto;
@@ -339,6 +359,7 @@ video {
   align-items: center;
 }
 
+/* 모바일 레이아웃 조정 */
 @media (max-width: 600px) {
   header {
     flex-direction: column;

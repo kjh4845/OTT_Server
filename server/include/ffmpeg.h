@@ -1,6 +1,8 @@
 #ifndef FFMPEG_H
 #define FFMPEG_H
 
+// 외부 ffmpeg 실행을 통한 썸네일 생성 API
+
 #include <stddef.h>
 
 #include "server.h"

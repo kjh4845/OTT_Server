@@ -1,14 +1,16 @@
 #ifndef DB_H
 #define DB_H
 
+// SQLite 기반 영속 계층 인터페이스
+
 #include <pthread.h>
 #include <sqlite3.h>
 #include <time.h>
 #include <stddef.h>
 
 typedef struct {
-    sqlite3 *conn;
-    pthread_mutex_t mutex;
+    sqlite3 *conn;        // SQLite 핸들
+    pthread_mutex_t mutex; // 단일 연결을 여러 스레드에서 보호하기 위한 뮤텍스
 } db_ctx_t;
 
 int db_init(db_ctx_t *db, const char *path);

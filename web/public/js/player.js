@@ -1,3 +1,4 @@
+// 단일 비디오 시청 페이지: 세션 체크, 재개 기능, 진행률 저장
 (async function () {
   let user;
   try {
@@ -20,6 +21,7 @@
   const meta = document.getElementById('video-meta');
 
   if (logoutBtn) {
+    // 다른 페이지와 동일하게 로그아웃 후 로그인 화면으로 보낸다.
     logoutBtn.addEventListener('click', async () => {
       try {
         await api.post('/api/auth/logout');
@@ -37,6 +39,7 @@
   let videosData;
   let historyData;
   try {
+    // 비디오 목록과 히스토리를 병렬 요청해 로딩 시간을 단축한다.
     [videosData, historyData] = await Promise.all([
       api.get('/api/videos'),
       api.get('/api/history').catch(() => ({ history: [] })),
@@ -71,12 +74,14 @@
     resumeBanner.style.display = 'flex';
   }
 
+  // "처음부터" 버튼
   resumeStartBtn.addEventListener('click', () => {
     resumeSeconds = 0;
     resumeBanner.style.display = 'none';
     player.currentTime = 0;
     player.play().catch(() => {});
   });
+  // 마지막 위치에서 이어보기 버튼
   resumeContinueBtn.addEventListener('click', () => {
     resumeBanner.style.display = 'none';
     player.currentTime = resumeSeconds;
@@ -86,6 +91,7 @@
   let lastSent = 0;
   let currentPosition = resumeSeconds;
 
+  // 진행 상황을 디스크에 저장하는 POST 요청. opts.keepalive로 페이지 이탈 대응.
   async function persist(position, opts = {}) {
     try {
       await fetch(`/api/history/${videoId}`, {
@@ -102,6 +108,7 @@
     }
   }
 
+  // 3초마다 또는 강제로만 서버에 업데이트해 불필요한 트래픽을 줄인다.
   function maybePersist(force = false) {
     const now = Date.now();
     if (!force && now - lastSent < 3000) {
@@ -138,6 +145,7 @@
     }
   });
 
+  // 탭을 닫는 순간에도 마지막 위치를 최대한 살려둔다.
   window.addEventListener('beforeunload', () => {
     if (currentPosition > 0) {
       const payload = new Blob([JSON.stringify({ position: currentPosition })], {

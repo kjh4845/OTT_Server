@@ -1,3 +1,4 @@
+// 인증/세션 관련 비즈니스 로직을 모두 담고 있는 구현부
 #include "auth.h"
 
 #include <ctype.h>
@@ -12,12 +13,14 @@
 #include "http.h"
 #include "utils.h"
 
+// 세션 쿠키 이름과 비밀번호 해시 관련 상수들
 #define SESSION_COOKIE_NAME "ott_session"
 #define AUTH_SALT_LEN 16
 #define AUTH_HASH_LEN 32
 #define AUTH_ITERATIONS 200000
 #define USERNAME_MAX_LEN 32
 
+// 폼 입력을 정리할 때 앞/뒤 공백을 제거하기 위한 유틸리티
 static void trim_whitespace(char *s) {
     if (!s) return;
     size_t len = strlen(s);
@@ -35,6 +38,7 @@ static void trim_whitespace(char *s) {
     s[end - start] = '\0';
 }
 
+// 허용된 문자(영문/숫자/._-)와 길이 제약을 만족하는지 검사한다.
 static int is_valid_username(const char *username) {
     if (!username) {
         return 0;
@@ -52,6 +56,7 @@ static int is_valid_username(const char *username) {
     return 1;
 }
 
+// 쿠키 헤더에서 특정 이름의 값을 추출한다.
 static int parse_cookie(const char *header, const char *name, char *out, size_t len) {
     if (!header || !name || !out || len == 0) {
         return -1;
@@ -91,6 +96,7 @@ static int parse_cookie(const char *header, const char *name, char *out, size_t 
     return -1;
 }
 
+// 세션 쿠키를 만료시키는 Set-Cookie 헤더를 전송한다.
 static int clear_session_cookie(request_ctx_t *ctx) {
     char cookie[512];
     if (snprintf(cookie, sizeof(cookie),
@@ -105,6 +111,7 @@ static int clear_session_cookie(request_ctx_t *ctx) {
     return http_send_response(ctx->client_fd, 204, http_status_text(204), NULL, NULL, 0, headers);
 }
 
+// PBKDF2-HMAC(SHA-256)으로 랜덤 솔트를 붙여 해시를 생성한다.
 int auth_hash_password(const char *password, unsigned char *salt_out, size_t salt_len,
                        unsigned char *hash_out, size_t hash_len) {
     if (!password || !salt_out || !hash_out) {
@@ -120,6 +127,7 @@ int auth_hash_password(const char *password, unsigned char *salt_out, size_t sal
     return 0;
 }
 
+// 사용자가 입력한 비밀번호를 동일한 파라미터로 해시하여 기존 해시와 비교한다.
 int auth_verify_password(const char *password, const unsigned char *salt, size_t salt_len,
                          const unsigned char *expected_hash, size_t hash_len) {
     if (!password || !salt || !expected_hash) {
@@ -139,6 +147,7 @@ int auth_verify_password(const char *password, const unsigned char *salt, size_t
     return 0;
 }
 
+// 세션 토큰을 URL-safe Base64 문자열로 생성한다.
 int auth_generate_session_token(char *buffer, size_t len) {
     if (!buffer || len < 48) {
         return -1;
@@ -155,6 +164,7 @@ int auth_generate_session_token(char *buffer, size_t len) {
     return 0;
 }
 
+// 서버 부팅 시 기본 계정을 채워 넣어 데모 환경에서도 즉시 로그인할 수 있게 한다.
 static void ensure_default_users(server_ctx_t *server) {
     if (!server) {
         return;
@@ -188,11 +198,13 @@ int auth_initialize(server_ctx_t *server) {
     if (!server) {
         return -1;
     }
+    // 데이터베이스에 기본 사용자 계정을 삽입하고 만료된 세션을 정리한다.
     ensure_default_users(server);
     db_purge_expired_sessions(&server->db, time(NULL));
     return 0;
 }
 
+// 세션 토큰을 DB에서 조회해 request_ctx에 로그인 정보를 주입한다.
 static int load_session(server_ctx_t *server, const char *token, request_ctx_t *ctx) {
     time_t expires = 0;
     int user_id = 0;
@@ -211,6 +223,7 @@ static int load_session(server_ctx_t *server, const char *token, request_ctx_t *
     return 0;
 }
 
+// Cookie 헤더에서 세션 토큰을 읽어 들여 인증 여부를 표시한다.
 int auth_authenticate_request(request_ctx_t *ctx) {
     const char *cookie_header = http_get_header(ctx->request, "Cookie");
     if (!cookie_header) {
@@ -226,6 +239,7 @@ int auth_authenticate_request(request_ctx_t *ctx) {
     return 0;
 }
 
+// /api/auth/login 엔드포인트: 사용자 인증 및 세션 발급
 void auth_handle_login(request_ctx_t *ctx) {
     if (!ctx->request->body || ctx->request->body_length == 0) {
         router_send_json_error(ctx, 400, "Missing credentials");
@@ -238,6 +252,7 @@ void auth_handle_login(request_ctx_t *ctx) {
         router_send_json_error(ctx, 400, "Invalid payload");
         return;
     }
+    // DB에 저장된 해시/솔트와 사용자 ID를 가져온다.
     unsigned char hash[AUTH_HASH_LEN];
     unsigned char salt[AUTH_SALT_LEN];
     int user_id = 0;
@@ -252,6 +267,7 @@ void auth_handle_login(request_ctx_t *ctx) {
         memset(password, 0, sizeof(password));
         return;
     }
+    // 새 세션 토큰을 만들어 세션 테이블에 저장한다.
     char token[128];
     if (auth_generate_session_token(token, sizeof(token)) != 0) {
         router_send_json_error(ctx, 500, "Failed to generate session");
@@ -270,6 +286,7 @@ void auth_handle_login(request_ctx_t *ctx) {
     snprintf(ctx->username, sizeof(ctx->username), "%s", username);
     snprintf(ctx->session_token, sizeof(ctx->session_token), "%s", token);
 
+    // 클라이언트에 돌려줄 JSON 응답과 Set-Cookie 헤더 구성
     char response[256];
     snprintf(response, sizeof(response), "{\"username\":\"%s\"}", username);
 
@@ -282,6 +299,7 @@ void auth_handle_login(request_ctx_t *ctx) {
     memset(password, 0, sizeof(password));
 }
 
+// /api/auth/logout 엔드포인트: 세션 삭제 및 쿠키 정리
 void auth_handle_logout(request_ctx_t *ctx) {
     if (ctx->session_token[0]) {
         db_delete_session(&ctx->server->db, ctx->session_token);
@@ -299,6 +317,7 @@ void auth_handle_logout(request_ctx_t *ctx) {
     (void)clear_session_cookie(ctx);
 }
 
+// /api/auth/me 엔드포인트: 현재 로그인된 사용자 정보를 반환
 void auth_handle_me(request_ctx_t *ctx) {
     if (!ctx->authenticated) {
         router_send_json_error(ctx, 401, "Unauthorized");
@@ -309,6 +328,7 @@ void auth_handle_me(request_ctx_t *ctx) {
     router_send_json(ctx, 200, body, NULL);
 }
 
+// /api/auth/register 엔드포인트: 신규 계정 생성 및 즉시 로그인 처리를 수행
 void auth_handle_register(request_ctx_t *ctx) {
     if (!ctx || !ctx->request->body) {
         router_send_json_error(ctx, 400, "Invalid payload");
@@ -336,6 +356,7 @@ void auth_handle_register(request_ctx_t *ctx) {
         router_send_json_error(ctx, 400, "Passwords do not match");
         goto cleanup;
     }
+    // 가입 시점에도 기존 로그인과 동일한 해시/세션 생성을 수행한다.
     unsigned char hash[AUTH_HASH_LEN];
     unsigned char salt[AUTH_SALT_LEN];
     if (auth_hash_password(password, salt, sizeof(salt), hash, sizeof(hash)) != 0) {

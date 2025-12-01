@@ -1,3 +1,4 @@
+// 시청 기록 API 엔드포인트 구현부
 #include "history.h"
 
 #include <limits.h>
@@ -9,11 +10,13 @@
 #include "db.h"
 #include "utils.h"
 
+// /api/history: 현재 사용자에 대한 최근 시청 기록을 JSON으로 돌려준다.
 void history_handle_get(request_ctx_t *ctx) {
     if (!ctx->authenticated) {
         router_send_json_error(ctx, 401, "Unauthorized");
         return;
     }
+    // 동적 JSON을 만들기 위해 string_builder를 사용한다.
     string_builder_t sb;
     if (sb_init(&sb, 512) != 0) {
         router_send_json_error(ctx, 500, "Allocation failed");
@@ -105,6 +108,7 @@ void history_handle_get(request_ctx_t *ctx) {
     sb_free(&sb);
 }
 
+// URL 경로 파라미터를 int로 파싱한다.
 static int parse_int(const char *s) {
     if (!s) return -1;
     char *end = NULL;
@@ -113,6 +117,7 @@ static int parse_int(const char *s) {
     return (int)v;
 }
 
+// /api/history/:id: 비디오별 마지막 시청 위치를 업데이트한다.
 void history_handle_update(request_ctx_t *ctx) {
     if (!ctx->authenticated) {
         router_send_json_error(ctx, 401, "Unauthorized");

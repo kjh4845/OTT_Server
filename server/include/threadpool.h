@@ -1,6 +1,8 @@
 #ifndef THREADPOOL_H
 #define THREADPOOL_H
 
+//FIFO 작업 큐 기반 스레드 풀 선언부
+
 #include <pthread.h>
 #include <stddef.h>
 

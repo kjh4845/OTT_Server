@@ -1,4 +1,6 @@
+// 로그인 및 회원가입 폼을 제어하는 스크립트
 (async function () {
+  // 페이지가 로드되면 먼저 기존 세션이 있는지 확인해 바로 리디렉션한다.
   try {
     const user = await api.me();
     if (user) {
@@ -15,6 +17,7 @@
   const registerError = document.getElementById('register-error');
   const registerSuccess = document.getElementById('register-success');
 
+  // 로그인 버튼: API 호출 후 성공 시 라이브러리로 이동
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     errorBox.style.display = 'none';
@@ -39,6 +42,7 @@
   }
 
   if (registerForm) {
+    // 회원가입 제출 시 간단한 유효성 검사 후 POST /register
     registerForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       hideRegisterMessages();

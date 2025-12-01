@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
+    <!-- 상단 헤더: 사용자 인사 및 로그아웃 버튼 -->
     <header>
       <div>
         <h1>My Library</h1>
@@ -15,6 +16,7 @@
       <button id="logout-btn" class="danger">Sign Out</button>
     </header>
     <main>
+      <!-- 검색/필터 영역 -->
       <section class="library-toolbar">
         <form id="search-form" class="search-bar" role="search">
           <label class="sr-only" for="video-search">Search videos</label>
@@ -34,11 +36,13 @@
         </form>
       </section>
       <div id="status" class="alert" style="display:none"></div>
+      <!-- 동영상 카드가 무한 스크롤로 붙는 영역 -->
       <section id="videos-grid" class="grid"></section>
       <div id="feed-loader" class="loading-pill" style="display:none">Loading...</div>
       <div id="feed-end" class="feed-end" style="display:none">마지막 콘텐츠입니다.</div>
       <div id="scroll-sentinel" aria-hidden="true"></div>
     </main>
+    <!-- 공통 API 유틸 + 비디오 목록 페이지 스크립트 -->
     <script src="/js/api.js" defer></script>
     <script src="/js/videos.js" defer></script>
   </body>

@@ -1,9 +1,11 @@
+// 간단한 작업 큐를 기반으로 한 pthread 워커 풀 구현
 #include "threadpool.h"
 
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
+// 각 워커 스레드는 큐에 작업이 들어올 때까지 대기했다가 실행한다.
 static void *worker_main(void *arg) {
     thread_pool_t *pool = (thread_pool_t *)arg;
     for (;;) {
@@ -31,6 +33,7 @@ static void *worker_main(void *arg) {
     return NULL;
 }
 
+// 지정한 개수의 워커 스레드를 생성한다.
 int thread_pool_init(thread_pool_t *pool, size_t worker_count) {
     memset(pool, 0, sizeof(*pool));
     pool->worker_count = worker_count;
@@ -63,6 +66,7 @@ int thread_pool_init(thread_pool_t *pool, size_t worker_count) {
     return 0;
 }
 
+// 작업을 큐 끝에 추가하고 워커 하나를 깨운다.
 void thread_pool_submit(thread_pool_t *pool, thread_job_fn fn, void *arg) {
     thread_job_t *job = calloc(1, sizeof(thread_job_t));
     if (!job) {
@@ -81,6 +85,7 @@ void thread_pool_submit(thread_pool_t *pool, thread_job_fn fn, void *arg) {
     pthread_mutex_unlock(&pool->mutex);
 }
 
+// 모든 스레드를 종료시키고 남은 작업을 정리한다.
 void thread_pool_destroy(thread_pool_t *pool) {
     pthread_mutex_lock(&pool->mutex);
     pool->stop = 1;

@@ -1,6 +1,8 @@
 #ifndef HTTP_H
 #define HTTP_H
 
+// HTTP 파싱/직접 응답 송신을 위한 자료구조와 함수 정의
+
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -28,9 +30,9 @@ typedef struct {
     size_t header_count;
     char *body;
     size_t body_length;
-    char *raw_data;
+    char *raw_data;   // 전체 요청 버퍼 (헤더+본문)
     size_t raw_length;
-    int owns_raw_data;
+    int owns_raw_data; // 내부에서 malloc했다면 1
 } http_request_t;
 
 int http_parse_request(int fd, http_request_t *req, char *buffer, size_t bufsize);

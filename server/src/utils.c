@@ -1,3 +1,4 @@
+// 범용 유틸 함수 모음 (로깅, 파일 IO, 문자열 빌더 등)
 #include "utils.h"
 
 #include <errno.h>
@@ -10,6 +11,7 @@
 #include <unistd.h>
 #include <ctype.h>
 
+// fgets 등으로 읽은 문자열 끝의 \n/\r 을 제거한다.
 void trim_trailing_newline(char *s) {
     if (!s) {
         return;
@@ -21,12 +23,14 @@ void trim_trailing_newline(char *s) {
     }
 }
 
+// UTC 기준 ISO-8601 타임스탬프를 만든다.
 void get_iso8601(char *buf, size_t len, time_t ts) {
     struct tm tm;
     gmtime_r(&ts, &tm);
     strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", &tm);
 }
 
+// 디렉터리가 없으면 생성하고, 파일이 있으면 에러를 돌려준다.
 int ensure_directory(const char *path) {
     struct stat st;
     if (stat(path, &st) == 0) {
@@ -42,6 +46,7 @@ int ensure_directory(const char *path) {
     return 0;
 }
 
+// 전체 파일을 한 번에 읽어 널 종료된 버퍼로 반환한다.
 char *read_file(const char *path, size_t *out_len) {
     FILE *fp = fopen(path, "rb");
     if (!fp) {
@@ -75,6 +80,7 @@ char *read_file(const char *path, size_t *out_len) {
     return data;
 }
 
+// URL-safe Base64 인코딩 (패딩 제거) 구현
 int base64url_encode(const uint8_t *input, size_t input_len, char *output, size_t output_len) {
     static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     size_t out_index = 0;
@@ -101,12 +107,14 @@ int base64url_encode(const uint8_t *input, size_t input_len, char *output, size_
     return (int)out_index;
 }
 
+// 시스템 uptime을 밀리초 단위로 반환한다.
 uint64_t get_monotonic_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
+// 공통 포맷터: STDERR로 로그를 출력한다.
 static void vlog_at_level(const char *level, const char *fmt, va_list ap) {
     fprintf(stderr, "[%s] ", level);
     vfprintf(stderr, fmt, ap);
@@ -134,6 +142,7 @@ void log_error(const char *fmt, ...) {
     va_end(ap);
 }
 
+// string_builder 초기화 및 버퍼 할당
 int sb_init(string_builder_t *sb, size_t initial_capacity) {
     if (!sb) return -1;
     if (initial_capacity == 0) {
@@ -149,6 +158,7 @@ int sb_init(string_builder_t *sb, size_t initial_capacity) {
     return 0;
 }
 
+// printf 스타일 포맷으로 문자열을 이어 붙인다.
 int sb_append(string_builder_t *sb, const char *fmt, ...) {
     if (!sb || !fmt) return -1;
     va_list ap;
@@ -192,6 +202,7 @@ void sb_free(string_builder_t *sb) {
     sb->capacity = 0;
 }
 
+// JSON 특수 문자를 escape 처리하며 문자열을 추가한다.
 int sb_append_json_string(string_builder_t *sb, const char *value) {
     if (!sb) return -1;
     if (!value) {
@@ -232,6 +243,7 @@ int sb_append_json_string(string_builder_t *sb, const char *value) {
     return 0;
 }
 
+// 매우 단순한 문자열 파서: "key":"value" 패턴만 처리한다.
 int json_get_string(const char *json, const char *key, char *out, size_t out_len) {
     if (!json || !key || !out || out_len == 0) {
         return -1;
@@ -269,6 +281,7 @@ int json_get_string(const char *json, const char *key, char *out, size_t out_len
     return 0;
 }
 
+// 숫자 값도 동일한 패턴으로 추출한다.
 int json_get_double(const char *json, const char *key, double *out) {
     if (!json || !key || !out) {
         return -1;
