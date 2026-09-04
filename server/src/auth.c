@@ -245,7 +245,7 @@ void auth_handle_login(request_ctx_t *ctx) {
         router_send_json_error(ctx, 400, "Missing credentials");
         return;
     }
-    char username[128];
+    char username[USERNAME_MAX_LEN + 1];
     char password[128];
     if (json_get_string(ctx->request->body, "username", username, sizeof(username)) != 0 ||
         json_get_string(ctx->request->body, "password", password, sizeof(password)) != 0) {

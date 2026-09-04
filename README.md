@@ -1,7 +1,7 @@
 # OTT_Server
 This is OTT_Server project with C
 
-High-performance OTT-style media server implemented in C11 using POSIX sockets, epoll, and a pthread-based worker pool. The server streams MP4 files with HTTP Range support, manages authentication and viewing history, and generates cached thumbnails with FFmpeg. A lightweight HTML/CSS/JS front-end is included, together with Docker tooling for reproducible builds.
+OTT-style media server implemented in C11 using POSIX sockets, epoll, and a pthread-based worker pool. The server streams MP4 files with HTTP Range support, manages authentication and viewing history, and generates cached thumbnails with FFmpeg. A lightweight HTML/CSS/JS front-end is included, together with Docker tooling for reproducible builds.
 
 ## Features
 
@@ -56,6 +56,14 @@ The SQLite schema is defined in `server/schema.sql`. On first launch the server 
 - POSIX environment (Linux recommended; macOS uses `poll()` fallback)
 - Development libraries: `libsqlite3`, `libssl` (OpenSSL), `ffmpeg`
 
+On macOS with Homebrew:
+
+```bash
+brew install openssl@3 sqlite ffmpeg
+```
+
+The Makefile detects the Homebrew prefixes for OpenSSL and SQLite automatically.
+
 ### Build
 
 ```bash
@@ -86,6 +94,30 @@ docker compose logs -f
 
 Volumes mount the host `media/`, `web/thumbnails/`, and `data/` directories into the container, ensuring media, cached thumbnails, and the SQLite database persist across restarts.
 
+## Verification (2026-09-04)
+
+The current source was rebuilt without compiler warnings in both environments:
+
+- macOS 26.6.2, Apple M4 Pro, Apple Clang, Homebrew OpenSSL 3 and SQLite
+- Ubuntu 22.04 ARM64 multi-stage Docker image
+
+An isolated Docker container with temporary database and thumbnail directories passed the following checks:
+
+- `GET /healthz` returned `200 {"status":"ok"}` and the Docker health state became `healthy`.
+- Login and authenticated video listing returned HTTP 200 with three mounted test videos.
+- `Range: bytes=0-1023` returned HTTP 206 with exactly 1,024 bytes.
+- The returned range had the same SHA-256 digest as the first 1,024 bytes of the source MP4.
+- A 30-second watch position was stored, a new session was issued, and `resumeSeconds: 30.0` was restored after login.
+
+Loopback microbenchmarks were repeated three times with ApacheBench. The median run is shown below.
+
+| Request | Load | Median requests/sec | Failed requests |
+| --- | --- | ---: | ---: |
+| Static login page | 1,000 requests, concurrency 20 | 8,840.64 | 0 |
+| Authenticated 1 KiB Range | 500 requests, concurrency 10 | 5,768.94 | 0 |
+
+ApacheBench reports HTTP 206 responses in its `Non-2xx responses` field; the Range status and payload were verified separately. These numbers measure a local Docker loopback microbenchmark, not public-network throughput or production capacity.
+
 ## QUIC / HTTP/3 edge
 
 An optional Caddy front door is included as the `quic-edge` service in `docker-compose.yml`. It listens on `8443` (TCP+UDP), terminates TLS with an internal CA, speaks HTTP/3/QUIC to clients, and reverse-proxies all traffic to the C server on port `3000`.
@@ -99,6 +131,7 @@ An optional Caddy front door is included as the `quic-edge` service in `docker-c
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
+| `GET` | `/healthz` | Return process health for Docker and edge checks |
 | `POST` | `/api/auth/login` | Authenticate user (sets HttpOnly session cookie) |
 | `POST` | `/api/auth/register` | Create a new account and sign in |
 | `POST` | `/api/auth/logout` | Destroy current session |

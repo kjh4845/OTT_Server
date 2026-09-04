@@ -15,7 +15,7 @@ RUN make clean && make
 FROM ubuntu:22.04 AS run
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
-    libsqlite3-0 libssl3 ffmpeg \
+    libsqlite3-0 libssl3 ffmpeg curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/server/ott_server /app/ott_server
@@ -28,5 +28,5 @@ ENV PORT=3000 \
     SESSION_TTL_HOURS=24
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
-  CMD [ -f "/app/web/public/index.html" ] || exit 1
+  CMD curl --fail --silent http://127.0.0.1:3000/healthz > /dev/null || exit 1
 CMD ["/app/ott_server"]

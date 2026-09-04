@@ -23,6 +23,18 @@
 #define HTTP_INITIAL_BUFFER 8192
 #define HTTP_MAX_BUFFER (8 * 1024 * 1024)
 
+static void copy_bounded(char *dest, size_t dest_size, const char *src) {
+    if (!dest || dest_size == 0 || !src) {
+        return;
+    }
+    size_t length = strlen(src);
+    if (length >= dest_size) {
+        length = dest_size - 1;
+    }
+    memcpy(dest, src, length);
+    dest[length] = '\0';
+}
+
 // 구조체를 초기화해 모든 포인터를 NULL/0으로 만든다.
 static void request_init(http_request_t *req) {
     memset(req, 0, sizeof(*req));
@@ -123,14 +135,14 @@ int http_parse_request(int fd, http_request_t *req, char *buffer, size_t bufsize
         goto fail;
     }
     req->method = http_method_from_string(method);
-    strncpy(req->http_version, version, sizeof(req->http_version) - 1);
+    copy_bounded(req->http_version, sizeof(req->http_version), version);
 
     char *qmark = strchr(url, '?');
     if (qmark) {
         *qmark = '\0';
-        strncpy(req->query, qmark + 1, sizeof(req->query) - 1);
+        copy_bounded(req->query, sizeof(req->query), qmark + 1);
     }
-    strncpy(req->path, url, sizeof(req->path) - 1);
+    copy_bounded(req->path, sizeof(req->path), url);
 
     req->header_count = 0;
     char *cursor = line_end + 2; // move past CRLF

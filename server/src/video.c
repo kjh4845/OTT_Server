@@ -1,4 +1,6 @@
 // 비디오 라이브러리 동기화, 스트리밍, 썸네일 API를 담당하는 모듈
+#define _POSIX_C_SOURCE 200809L
+
 #include "video.h"
 
 #include <ctype.h>
@@ -20,13 +22,15 @@
 #include "utils.h"
 
 // 공통 보안 헤더에 추가 헤더를 덧붙여 응답용 문자열을 만든다.
-static void build_header(char *dest, size_t len, server_ctx_t *server, const char *extra) {
-    if (!dest || len == 0) return;
+static int build_header(char *dest, size_t len, server_ctx_t *server, const char *extra) {
+    if (!dest || len == 0 || !server) return -1;
+    int written;
     if (extra && *extra) {
-        snprintf(dest, len, "%s%s", server->security_headers, extra);
+        written = snprintf(dest, len, "%s%s", server->security_headers, extra);
     } else {
-        snprintf(dest, len, "%s", server->security_headers);
+        written = snprintf(dest, len, "%s", server->security_headers);
     }
+    return written < 0 || (size_t)written >= len ? -1 : 0;
 }
 
 #define VIDEO_DEFAULT_LIMIT 12
@@ -158,6 +162,8 @@ typedef struct {
 
 static media_watch_state_t g_media_watch = {0};
 
+static int sync_media_directory(server_ctx_t *server);
+
 // 디렉터리의 mtime을 가져온다. 실패 시 0을 반환한다.
 static time_t dir_mtime(const char *path) {
     struct stat st;
@@ -172,7 +178,8 @@ static void sleep_with_stop(media_watch_state_t *state) {
     if (!state || state->interval_sec <= 0) return;
     int slices = state->interval_sec * 10; // 100ms x interval_sec
     for (int i = 0; i < slices && !state->stop; ++i) {
-        usleep(100000);
+        struct timespec request = {.tv_sec = 0, .tv_nsec = 100000000L};
+        nanosleep(&request, NULL);
     }
 }
 
@@ -397,7 +404,6 @@ int video_initialize(server_ctx_t *server) {
 }
 
 typedef struct {
-    request_ctx_t *ctx;
     string_builder_t *sb;
     int first;
     const resume_map_t *history;
@@ -409,7 +415,6 @@ static int append_video_row(void *userdata, int id, const char *title,
                             const char *filename, const char *description,
                             int duration_seconds) {
     list_ctx_t *data = userdata;
-    request_ctx_t *ctx = data->ctx;
     double resume = 0;
     int has_resume = 0;
     // history map에서 이 비디오에 대한 마지막 재생 지점을 찾는다.
@@ -487,7 +492,7 @@ void video_handle_list(request_ctx_t *ctx) {
         router_send_json_error(ctx, 500, "Allocation failed");
         return;
     }
-    list_ctx_t data = {.ctx = ctx, .sb = &sb, .first = 1, .history = &map, .emitted = 0};
+    list_ctx_t data = {.sb = &sb, .first = 1, .history = &map, .emitted = 0};
     int has_more = 0;
     if (db_query_videos(&ctx->server->db, has_query ? search_term : NULL, limit, cursor,
                         append_video_row, &data, &has_more) != 0) {
@@ -606,7 +611,7 @@ void video_handle_stream(request_ctx_t *ctx) {
     }
     off_t file_size = st.st_size;
     const char *range = http_get_header(ctx->request, "Range");
-    char headers[512];
+    char headers[1024];
     if (range) {
         off_t start = 0, end = 0;
         if (parse_range_header(range, file_size, &start, &end) != 0) {
@@ -618,13 +623,19 @@ void video_handle_stream(request_ctx_t *ctx) {
         snprintf(extra, sizeof(extra),
                  "Accept-Ranges: bytes\r\nContent-Range: bytes %lld-%lld/%lld\r\n",
                  (long long)start, (long long)end, (long long)file_size);
-        build_header(headers, sizeof(headers), ctx->server, extra);
+        if (build_header(headers, sizeof(headers), ctx->server, extra) != 0) {
+            router_send_json_error(ctx, 500, "Response headers too large");
+            return;
+        }
         if (http_send_file_response(ctx->client_fd, 206, http_status_text(206), "video/mp4",
                                     path, start, length, 1, headers) != 0) {
             log_warn("Failed to stream range for video %d", video_id);
         }
     } else {
-        build_header(headers, sizeof(headers), ctx->server, "Accept-Ranges: bytes\r\n");
+        if (build_header(headers, sizeof(headers), ctx->server, "Accept-Ranges: bytes\r\n") != 0) {
+            router_send_json_error(ctx, 500, "Response headers too large");
+            return;
+        }
         if (http_send_file_response(ctx->client_fd, 200, http_status_text(200), "video/mp4",
                                     path, 0, 0, 1, headers) != 0) {
             log_warn("Failed to stream video %d", video_id);
@@ -659,8 +670,11 @@ void video_handle_thumbnail(request_ctx_t *ctx) {
         router_send_json_error(ctx, 500, "Thumbnail error");
         return;
     }
-    char headers[256];
-    build_header(headers, sizeof(headers), ctx->server, NULL);
+    char headers[512];
+    if (build_header(headers, sizeof(headers), ctx->server, NULL) != 0) {
+        router_send_json_error(ctx, 500, "Response headers too large");
+        return;
+    }
     if (http_send_file_response(ctx->client_fd, 200, http_status_text(200), "image/jpeg",
                                 thumb_path, 0, 0, 0, headers) != 0) {
         log_warn("Failed to send thumbnail for video %d", video_id);

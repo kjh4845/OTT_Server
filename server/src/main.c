@@ -40,6 +40,10 @@ static void handle_signal(int signum) {
     g_running = 0;
 }
 
+static void health_handle(request_ctx_t *ctx) {
+    router_send_json(ctx, 200, "{\"status\":\"ok\"}", NULL);
+}
+
 // 논블로킹 소켓으로 전환한다.
 static int make_nonblocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -195,7 +199,7 @@ static void handle_client(void *arg) {
 
     auth_authenticate_request(&ctx);
 
-    if (strncmp(req.path, "/api/", 5) == 0) {
+    if (strncmp(req.path, "/api/", 5) == 0 || strcmp(req.path, "/healthz") == 0) {
         router_handle(&ctx);
     } else {
         int rc = serve_static_file(server, &ctx);
@@ -362,6 +366,7 @@ int main(void) {
 
     // 라우터가 참조할 HTTP 엔드포인트 테이블 정의
     route_entry_t routes[] = {
+        {HTTP_GET, "/healthz", health_handle},
         {HTTP_POST, "/api/auth/login", auth_handle_login},
         {HTTP_POST, "/api/auth/register", auth_handle_register},
         {HTTP_POST, "/api/auth/logout", auth_handle_logout},

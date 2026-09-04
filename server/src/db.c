@@ -323,7 +323,10 @@ int db_query_videos(db_ctx_t *db, const char *search_term, int limit, int offset
     const char *like_term = NULL;
     if (search_term && *search_term) {
         // 부분 일치를 위해 %검색어% 패턴을 만든다.
-        size_t len = strnlen(search_term, sizeof(pattern) - 3);
+        size_t len = strlen(search_term);
+        if (len > sizeof(pattern) - 3) {
+            len = sizeof(pattern) - 3;
+        }
         pattern[0] = '%';
         memcpy(pattern + 1, search_term, len);
         pattern[len + 1] = '%';
